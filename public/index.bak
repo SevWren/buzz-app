@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buzz App</title>
+  <style>
+    /*
+     * Registered custom properties (CSS Houdini / @property)
+     * Without these declarations the browser treats custom properties as opaque
+     * strings and refuses to interpolate them. Declaring a syntax + initial-value
+     * tells the engine the type, unlocking smooth transitions and @keyframes tweens.
+     */
+    @property --bg-x        { syntax: '<percentage>'; inherits: false; initial-value: 30%;   }
+    @property --bg-y        { syntax: '<percentage>'; inherits: false; initial-value: 25%;   }
+    @property --shimmer-pos { syntax: '<percentage>'; inherits: false; initial-value: -120%; }
+
+    /* ── Design tokens ───────────────────────────────────────────────────────────
+     * oklch() is the modern color space for UI work. Equal L values look equally
+     * bright to human perception (unlike HSL/RGB). Chroma stays vivid across the
+     * full lightness range, and oklch hue-shifts produce natural gradients.
+     */
+    :root {
+      --bg:      oklch(96.5% 0.008 250);
+      --surface: oklch(100%  0     0  );
+      --border:  oklch(91%   0.01  250);
+      --text:    oklch(17%   0.05  264);
+      --muted:   oklch(53%   0.02  250);
+      --buzz:    oklch(70%   0.21   35);  /* warm orange */
+      --send:    oklch(62%   0.18  258);  /* bright blue */
+      --green:   oklch(52%   0.17  145);
+      --red:     oklch(50%   0.22   27);
+      --radius:  10px;
+      --shadow:
+        0 1px  3px oklch(0% 0 0 / 0.04),
+        0 4px 16px oklch(0% 0 0 / 0.07),
+        0 8px 32px oklch(0% 0 0 / 0.05);
+    }
+
+    /* Automatic dark mode — all color-mix() and var() calls below pick these up
+     * without any extra rules, so dark support is essentially free.              */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:      oklch(15%  0.02  250);
+        --surface: oklch(21%  0.02  255);
+        --border:  oklch(32%  0.02  250);
+        --text:    oklch(95%  0.008 250);
+        --muted:   oklch(62%  0.015 250);
+        --shadow:
+          0 1px  3px oklch(0% 0 0 / 0.3),
+          0 4px 16px oklch(0% 0 0 / 0.35),
+          0 8px 32px oklch(0% 0 0 / 0.3);
+      }
+    }
+
+    /* ── Reset ───────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Body — animated two-point gradient mesh ─────────────────────────────
+     * @property on --bg-x/--bg-y lets @keyframes bgdrift interpolate them as
+     * percentages. The two radial gradients use color-mix() so their tint color
+     * automatically darkens in dark mode when --send/--buzz stay the same hue
+     * but --bg shifts to a dark oklch value.
+     * 100dvh = "dynamic viewport height" — accounts for mobile browser chrome
+     * that appears/disappears on scroll, unlike 100vh which causes overflow.    */
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      color-scheme: light dark;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(
+          ellipse 70% 50% at var(--bg-x) var(--bg-y),
+          color-mix(in oklch, var(--send) 14%, transparent) 0%,
+          transparent 70%
+        ),
+        radial-gradient(
+          ellipse 55% 65% at calc(100% - var(--bg-x)) calc(100% - var(--bg-y)),
+          color-mix(in oklch, var(--buzz) 10%, transparent) 0%,
+          transparent 70%
+        );
+      min-height: 100dvh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 2rem 1rem;
+      animation: bgdrift 30s ease-in-out infinite alternate;
+    }
+
+    /* Drifts the two gradient focal points diagonally — subtle depth without motion */
+    @keyframes bgdrift {
+      from { --bg-x: 30%; --bg-y: 25%; }
+      to   { --bg-x: 70%; --bg-y: 75%; }
+    }
+
+    /* ── App layout ──────────────────────────────────────────────────────────── */
+    .app {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+      text-wrap: balance; /* prevent awkward single-word last lines */
+    }
+
+    /* ── Connection badge ────────────────────────────────────────────────────── */
+    .conn-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    /* Pulsing glow: animates box-shadow spread directly — no JS, no hacks */
+    .conn-dot.connected {
+      background: var(--green);
+      animation: dotglow 2.5s ease-in-out infinite;
+    }
+    @keyframes dotglow {
+      0%, 100% { box-shadow: 0 0 0 0px color-mix(in oklch, var(--green) 45%, transparent); }
+      50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--green) 20%, transparent); }
+    }
+
+    .conn-dot.connecting {
+      background: oklch(75% 0.17 75); /* amber — perceptually between green and red */
+      animation: dotpulse 1s ease-in-out infinite;
+    }
+    @keyframes dotpulse {
+      0%, 100% { opacity: 1;   }
+      50%      { opacity: 0.25;}
+    }
+
+    .conn-dot.disconnected { background: var(--red); }
+
+    /* ── Cards — gradient border via background-clip ─────────────────────────
+     * Two background layers stacked:
+     *   1. Solid surface color clipped to padding-box (fills the card interior)
+     *   2. Gradient clipped to border-box (visible only in the 1.5px border gap)
+     * The `border: 1.5px solid transparent` creates the gap; the gradient shows
+     * through it. No pseudo-elements, no z-index juggling, no overflow tricks.  */
+    .card {
+      background:
+        linear-gradient(var(--surface), var(--surface)) padding-box,
+        linear-gradient(
+          135deg,
+          color-mix(in oklch, var(--send) 35%, transparent),
+          color-mix(in oklch, var(--border) 90%, transparent) 45%,
+          color-mix(in oklch, var(--buzz)  22%, transparent)
+        ) border-box;
+      border: 1.5px solid transparent;
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      contain: layout style; /* independent layout context — faster reflow */
+    }
+
+    /* ── Input ───────────────────────────────────────────────────────────────── */
+    input[type="text"] {
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      caret-color: var(--send); /* brand-colored text cursor */
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    /* :focus-visible only triggers for keyboard/programmatic focus, not clicks —
+     * avoids the "ugly ring on mouse click" problem while keeping keyboard a11y. */
+    input[type="text"]:focus-visible {
+      border-color: var(--send);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--send) 20%, transparent);
+    }
+
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    /* ── Buttons ─────────────────────────────────────────────────────────────── */
+    .btn-row { display: flex; gap: 0.75rem; }
+
+    .btn {
+      flex: 1;
+      padding: 0.65rem 0.75rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      touch-action: manipulation; /* prevents 300ms tap delay on mobile */
+      /* Spring-physics release easing via linear() — the cubic-bezier function
+       * can't describe overshoot, but linear() can specify arbitrary keypoints.
+       * This curve: starts at 0, rushes to 0.5 at 20%, overshoots to 1.05 at
+       * 55%, dips to 0.97 at 75%, then settles at 1. Feels springy on release. */
+      transition:
+        filter 0.15s ease,
+        transform 0.38s linear(0, 0.5 20%, 1.05 55%, 0.97 75%, 1);
+    }
+
+    /* Shimmer sweep: a diagonal highlight that crosses the button on hover.
+     * @property on --shimmer-pos makes `translate: var(--shimmer-pos) 0`
+     * transition-able — without @property CSS treats it as an opaque string.   */
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        105deg,
+        transparent 30%,
+        rgba(255 255 255 / 0.28) 50%,
+        transparent 70%
+      );
+      translate: var(--shimmer-pos) 0;
+      pointer-events: none;
+    }
+
+    /* Wrap hover rules in (hover: hover) so they never fire on touch screens,
+     * where :hover can stick after a tap and look broken.                       */
+    @media (hover: hover) {
+      .btn:hover:not(:disabled) { filter: brightness(1.09); }
+      .btn:hover::after {
+        --shimmer-pos: 120%;
+        transition: --shimmer-pos 0.55s ease;
+      }
+    }
+
+    /* Fast press-in (override the spring transition) then spring release on lift */
+    .btn:active:not(:disabled) {
+      transform: scale(0.96);
+      transition:
+        filter 0.05s ease,
+        transform 0.1s ease-out;
+    }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-buzz { background: var(--buzz); color: #fff; }
+    .btn-send { background: var(--send); color: #fff; }
+
+    /* ── Event log ───────────────────────────────────────────────────────────── */
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .btn-clear {
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      touch-action: manipulation;
+      transition: color 0.15s ease;
+    }
+    @media (hover: hover) {
+      .btn-clear:hover { color: var(--text); }
+    }
+
+    .log-list {
+      list-style: none;
+      max-height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding-right: 4px;
+      overscroll-behavior: contain; /* prevents scroll chaining to the body */
+      /* Standard scrollbar API — supported Chrome 121+, Firefox 64+, Safari 18+ */
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    /* WebKit fallback — still the only way to tint scrollbar colors in older Safari */
+    .log-list::-webkit-scrollbar       { width: 4px; }
+    .log-list::-webkit-scrollbar-track { background: transparent; }
+    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Log-item entry animation via @starting-style ──────────────────────────────
+     * @starting-style defines the FROM state at the moment an element is first
+     * inserted into the DOM. The browser immediately transitions to the normal
+     * state, replacing the old @keyframes slideIn hack. Requires the property
+     * to already be listed in `transition` on the element itself.               */
+    .log-item {
+      display: flex;
+      gap: 0.6rem;
+      font-size: 0.84rem;
+      align-items: baseline;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+    @starting-style {
+      .log-item { opacity: 0; transform: translateY(-5px); }
+    }
+
+    .log-time {
+      font-size: 0.72rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-text { color: var(--text); word-break: break-word; }
+
+    /* color-mix() blends the type's accent color into --surface at a low ratio.
+     * Because --surface is token-driven, these backgrounds automatically become
+     * dark in dark mode — no separate @media (prefers-color-scheme: dark) block
+     * needed for log items.                                                      */
+    .log-item.log-client { background: color-mix(in oklch, var(--send)  11%, var(--surface)); }
+    .log-item.log-server { background: color-mix(in oklch, var(--green) 11%, var(--surface)); }
+    .log-item.log-error  { background: color-mix(in oklch, var(--red)    9%, var(--surface)); }
+    .log-item.log-system { background: color-mix(in oklch, var(--muted)  7%, var(--surface)); }
+
+    .log-item.log-error  .log-text { color: var(--red); }
+    .log-item.log-system .log-text { color: var(--muted); }
+
+    .log-empty {
+      font-size: 0.84rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 1.25rem 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+     * GLITCH SYSTEM TAKEOVER
+     * Triggered by the server-shutdown socket event. Sequence:
+     *   1. .app gets .glitching → 500 ms tear/invert/distort animation
+     *   2. Overlay snaps in, canvas radial pulse starts (requestAnimationFrame)
+     *   3. Typewriter scramble resolves the shutdown message
+     * ═══════════════════════════════════════════════════════════════════════════ */
+
+    /* ── Phase 1: page-tear on .app ─────────────────────────────────────────── */
+    @keyframes tearglitch {
+      0%   { clip-path: inset(0 0 100% 0);   transform: none;              filter: none; }
+      10%  { clip-path: inset(20% 0 30% 0);  transform: translateX(-6px);  filter: hue-rotate(180deg) invert(0.3); }
+      20%  { clip-path: inset(55% 0 10% 0);  transform: translateX(4px);   filter: hue-rotate(270deg) invert(0.5); }
+      30%  { clip-path: inset(10% 0 60% 0);  transform: translateX(-3px);  filter: invert(0.8); }
+      40%  { clip-path: inset(0 0 0 0);      transform: skewX(-4deg);      filter: hue-rotate(90deg); }
+      50%  { clip-path: inset(30% 0 40% 0);  transform: translateX(8px);   filter: invert(1) hue-rotate(180deg); }
+      60%  { clip-path: inset(0 0 0 0);      transform: none;              filter: brightness(3); }
+      70%  { clip-path: inset(0 0 0 0);      transform: scaleX(1.02);      filter: none; }
+      100% { clip-path: inset(0 0 0 0);      transform: none;              filter: none; }
+    }
+
+    /* White static flash at the end of the tear, via ::after on .app */
+    @keyframes staticflash {
+      0%, 79% { opacity: 0; }
+      82%     { opacity: 0.8; }
+      88%     { opacity: 0.15; }
+      94%     { opacity: 0.9; }
+      100%    { opacity: 0; }
+    }
+
+    .app.glitching {
+      animation: tearglitch 0.5s steps(1) forwards;
+      pointer-events: none;
+    }
+    .app.glitching::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: #fff;
+      pointer-events: none;
+      animation: staticflash 0.5s steps(1) forwards;
+      z-index: 100;
+    }
+
+    /* ── Phase 2: full-screen overlay ───────────────────────────────────────── */
+    #glitch-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: oklch(10% 0.10 27); /* very dark red */
+      overflow: hidden;
+    }
+    #glitch-overlay[hidden] { display: none; }
+
+    /* Canvas sits behind all content; JS draws the radial pulse here */
+    #glitch-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* CRT scanlines: repeating gradient scrolling downward continuously */
+    #glitch-scanlines {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent          0px,
+        transparent          3px,
+        oklch(0% 0 0 / 0.18) 3px,
+        oklch(0% 0 0 / 0.18) 4px
+      );
+      animation: scanroll 6s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes scanroll {
+      from { background-position: 0 0;      }
+      to   { background-position: 0 100vh;  }
+    }
+
+    /* Content layer — sits above canvas and scanlines */
+    #glitch-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 2rem;
+      text-align: center;
+      max-width: 480px;
+    }
+
+    /* Pulsing glow icon */
+    #glitch-icon {
+      font-size: 4rem;
+      font-weight: 900;
+      color: oklch(55% 0.25 27);
+      line-height: 1;
+      animation: iconpulse 1.8s ease-in-out infinite;
+    }
+    @keyframes iconpulse {
+      0%, 100% { text-shadow: 0 0 20px oklch(55% 0.25 27 / 0.8),  0 0  60px oklch(55% 0.25 27 / 0.4); }
+      50%      { text-shadow: 0 0 40px oklch(55% 0.25 27 / 1.0),  0 0 100px oklch(55% 0.25 27 / 0.7); }
+    }
+
+    /* Title with chromatic aberration — hard-cut text-shadow shifts each frame */
+    #glitch-title {
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: 0.15em;
+      color: oklch(62% 0.22 27);
+      text-transform: uppercase;
+      animation: chromatic 0.08s steps(1) infinite;
+    }
+    @keyframes chromatic {
+      0%   { text-shadow:  3px 0 oklch(55% 0.28 27), -3px 0 oklch(70% 0.2 200); }
+      25%  { text-shadow: -3px 0 oklch(55% 0.28 27),  3px 0 oklch(70% 0.2 200); }
+      50%  { text-shadow:  2px 0 oklch(55% 0.28 27), -2px 0 oklch(70% 0.2 200); }
+      75%  { text-shadow:  0px 0 oklch(55% 0.28 27),  0px 0 oklch(70% 0.2 200); }
+    }
+
+    /* Monospace typewriter text */
+    #glitch-message {
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: oklch(85% 0.04 27);
+      letter-spacing: 0.04em;
+      min-height: 1.5em;
+    }
+
+    #glitch-subtext {
+      font-size: 0.78rem;
+      color: oklch(60% 0.06 27);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* ── Reduced-motion: cut all decorative animation to a single frame ───────── */
+    @media (prefers-reduced-motion: reduce) {
+      body                 { animation: none; }
+      .conn-dot.connected  { animation: none; }
+      .conn-dot.connecting { animation: none; }
+      .btn                 { transition: filter 0.15s ease; }
+      .btn::after          { display: none; }
+      .log-item            { transition: none; }
+      /* Glitch overlay: skip all animation, show final state instantly */
+      .app.glitching       { animation: none; }
+      .app.glitching::after { display: none; }
+      #glitch-scanlines    { animation: none; }
+      #glitch-icon         { animation: none; }
+      #glitch-title        { animation: none; text-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <header>
+      <h1>Buzz App</h1>
+      <div class="conn-badge" role="status" aria-live="polite" aria-label="Connection status">
+        <span id="conn-dot" class="conn-dot disconnected" aria-hidden="true"></span>
+        <span id="conn-label">Disconnected</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off" maxlength="500" />
+      <div class="btn-row">
+        <button id="btn-buzz" class="btn btn-buzz" disabled>Buzz Dad</button>
+        <button id="btn-send" class="btn btn-send" disabled>Send Message</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="log-header">
+        <span class="log-title">Event Log</span>
+        <button class="btn-clear" id="btn-clear">Clear</button>
+      </div>
+      <ul id="log-list" class="log-list" aria-live="polite" aria-label="Event log">
+        <li class="log-empty" id="log-empty">No events yet.</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- Glitch takeover overlay — hidden until server emits server-shutdown -->
+  <div id="glitch-overlay" hidden aria-live="assertive" aria-label="Server offline">
+    <canvas id="glitch-canvas" aria-hidden="true"></canvas>
+    <div id="glitch-scanlines" aria-hidden="true"></div>
+    <div id="glitch-content">
+      <div id="glitch-icon" aria-hidden="true">!</div>
+      <div id="glitch-title">Connection Lost</div>
+      <div id="glitch-message"></div>
+      <div id="glitch-subtext">The server has gone offline.</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
