@@ -41,7 +41,7 @@ function prefersReducedMotion() {
 
 // ─── MatrixRain ───────────────────────────────────────────────────────────────
 
-const FONT_SIZE = 14; // CSS pixels — base size; colStride measured at runtime
+const FONT_SIZE = 13; // CSS pixels — 13px gives ~8% more columns than 14px
 
 export class MatrixRain {
   constructor(canvas) {
@@ -106,6 +106,7 @@ export class MatrixRain {
   // ── Private ────────────────────────────────────────────────────────────────
 
   _resize() {
+    const firstInit = this._cols.length === 0;
     const dpr = window.devicePixelRatio || 1;
     const W   = window.innerWidth;
     const H   = window.innerHeight;
@@ -121,12 +122,27 @@ export class MatrixRain {
     const ctx = this._ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Measure actual advance width after DPR transform (audit #6, #27)
+    // measureText returns CSS-pixel values — safe to call after DPR transform (audit #6, #27)
     ctx.font        = this._baseFont;
     ctx.textBaseline = 'top';
     this._colStride = Math.max(8, Math.ceil(ctx.measureText('ｦ').width));
 
-    this._initCols(W, H);
+    if (firstInit) {
+      // First call only: build all columns fresh
+      this._initCols(W, H);
+      return;
+    }
+
+    // Subsequent resize (alt-tab, fullscreen, window resize): PRESERVE existing column
+    // state so the rain never restarts from scratch. Only add/trim as needed.
+    const needed = Math.ceil(W / this._colStride) + 2;
+    for (let i = 0; i < this._cols.length; i++) {
+      this._cols[i].x = i * this._colStride; // re-anchor x in case stride changed
+    }
+    while (this._cols.length < needed) {
+      this._cols.push(this._makeCol(this._cols.length * this._colStride, H, false));
+    }
+    if (this._cols.length > needed) this._cols.length = needed;
   }
 
   _initCols(W, H) {
@@ -139,11 +155,12 @@ export class MatrixRain {
   }
 
   _makeCol(x, H, staggered) {
-    const streamLen = this._randStreamLen();
+    const streamLen = this._randStreamLen(H);
     return {
       x,
-      // Staggered launch: heads scattered from well above to halfway down screen (audit #15)
-      headY:          staggered ? -(Math.random() * H * 1.5) : -FONT_SIZE * 2,
+      // Staggered: spread headY within [0, H] so the screen fills immediately
+      // (no above-screen gap period — that was causing empty columns at startup)
+      headY:          staggered ? Math.random() * H : 0,
       speed:          0.8 + Math.random() * 2.2,
       streamLen,
       chars:          Array.from({ length: streamLen }, () => randChar()),
@@ -155,11 +172,13 @@ export class MatrixRain {
     };
   }
 
-  _randStreamLen() {
-    const r = Math.random();
-    if (r < 0.20) return  8 + Math.floor(Math.random() * 5);   // short  8–12
-    if (r < 0.70) return 13 + Math.floor(Math.random() * 8);   // medium 13–20
-    return 21 + Math.floor(Math.random() * 10);                 // long   21–30
+  _randStreamLen(H) {
+    // Streams must be at least full-screen height so every column cell is
+    // always filled — short streams left 70–90% of each column black.
+    const screenRows = Math.ceil((H || this._H || 900) / FONT_SIZE);
+    // Small variation (0–20 extra rows) so adjacent columns have slightly
+    // different tail positions, avoiding a uniform horizontal cutoff line.
+    return screenRows + 2 + Math.floor(Math.random() * 20);
   }
 
   _prewarm(frames) {
@@ -177,7 +196,9 @@ export class MatrixRain {
         col.headY += col.speed;
         col.mutateTimer++;
         if (col.mutateTimer >= col.mutateInterval) { this._mutateCol(col); col.mutateTimer = 0; }
-        if (col.headY - col.streamLen * FONT_SIZE > H) this._resetCol(col, H);
+        // Reset when HEAD exits screen bottom — not when tail exits.
+        // Old condition (tail exits) left the column dark for seconds between passes.
+        if (col.headY > H + FONT_SIZE * 4) this._resetCol(col, H);
       }
       ctx.shadowBlur  = 0;
       ctx.shadowColor = 'transparent';
@@ -237,10 +258,12 @@ export class MatrixRain {
       const charY = col.headY - j * FONT_SIZE;
       if (charY + FONT_SIZE < 0 || charY > H) continue;
 
-      const t          = j / col.streamLen;         // 0=head, 1=tail
-      const brightness = Math.max(0, 1 - t * 1.1);  // continuous gradient (audit #12)
+      const t          = j / col.streamLen;           // 0=head, 1=tail
+      // Minimum brightness 0.05 at tail keeps every cell faintly visible —
+      // prevents hard black cutoff at stream tail (reference image has no empty cells).
+      const brightness = Math.max(0.05, 1 - t);
       const green      = Math.floor(lerp(30, 255, brightness));
-      const alpha      = lerp(0.08, 0.9, brightness);
+      const alpha      = lerp(0.10, 0.92, brightness);
 
       if (j === 0) {
         // Head — glow only on leading char, keeps shadow call count low (audit #9)
@@ -266,10 +289,13 @@ export class MatrixRain {
   }
 
   _resetCol(col, H) {
-    col.headY          = -FONT_SIZE * 2;
+    // headY = 0: restart immediately from screen top with no above-screen gap.
+    // Old -FONT_SIZE*2 caused the column to be black for the full travel time
+    // above the screen before any characters appeared — that was the source of
+    // the large dark gaps visible between streams.
+    col.headY          = 0;
     col.speed          = 0.8 + Math.random() * 2.2;
-    col.streamLen      = this._randStreamLen();
-    // Reinitialise chars array to new length — prevents "undefined" render (audit #5)
+    col.streamLen      = this._randStreamLen(H);
     col.chars          = Array.from({ length: col.streamLen }, () => randChar());
     col.glowIntensity  = 0.6 + Math.random() * 0.4;
     col.glowSpikeTimer = 0;
