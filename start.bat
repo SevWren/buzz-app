@@ -53,12 +53,31 @@ if not exist "node_modules\" (
     echo.
 )
 
-:: ── Step 4: Launch (preflight.js creates .env + prints URLs automatically) ────
+:: ── Step 4: Run preflight (creates .env from .env.example + prints banner) ────
+node scripts/preflight.js
+if !ERRORLEVEL! neq 0 (
+    echo.
+    echo  [ERROR] Preflight failed. See output above.
+    echo.
+    pause
+    exit /b 1
+)
+
+:: ── Step 5: Launch directly via node — NOT via npm ───────────────────────────
+::
+::  Why not `npm run dev`?
+::  When the user presses Ctrl+C, Windows sends CTRL_C_EVENT to every process
+::  in the console. npm receives it and calls TerminateProcess() on its child
+::  (node.exe) before the server's graceful-shutdown handler has time to emit
+::  the server-shutdown broadcast to connected clients (~300 ms window needed).
+::  Removing npm from the chain means node --watch handles the signal itself,
+::  forwards it to the server child process, and waits for a clean exit.
+::
 echo  Launching server...
 echo.
-call npm run dev
+node --watch --env-file=.env src/server.js
 
-:: ── Step 5: Keep the window open so the user can read any error output ────────
+:: ── Step 6: Keep the window open so the user can read any error output ────────
 echo.
 if !ERRORLEVEL! neq 0 (
     echo  [ERROR] The server stopped unexpectedly. See output above.

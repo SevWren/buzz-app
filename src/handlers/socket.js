@@ -40,6 +40,15 @@ const msgLimiter  = makeRateLimiter();
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Emits a warning to all connected clients before the server tears down
+// sockets. Must be called BEFORE io.disconnectSockets() — once sockets are
+// closed the emit packet never reaches clients.
+export function broadcastShutdown(io) {
+  io.emit('server-shutdown', {
+    message: 'Server is shutting down. Connection will be lost.',
+  });
+}
+
 export function registerSocketHandlers(io) {
   io.on('connection', (socket) => {
     logger.info({ socketId: socket.id }, 'Client connected');

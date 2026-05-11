@@ -75,8 +75,9 @@ scripts/
 | Direction       | Event          | Payload                              |
 |-----------------|----------------|--------------------------------------|
 | client → server | `buzz-dad`     | *(none)*                             |
-| client → server | `send-message` | `{ text: string }` (1–500 chars, trimmed) |
-| server → client | `ack`          | `{ type: 'buzz' | 'message' | 'error', message: string }` |
+| client → server | `send-message`    | `{ text: string }` (1–500 chars, trimmed) |
+| server → client | `ack`             | `{ type: 'buzz' | 'message' | 'error', message: string }` |
+| server → client | `server-shutdown` | `{ message: string }` — emitted before `io.disconnectSockets()` during graceful shutdown |
 
 `send-message` also accepts an optional acknowledgement callback `(response: { ok: boolean, error?: string }) => void`.
 

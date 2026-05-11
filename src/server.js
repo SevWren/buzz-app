@@ -11,7 +11,7 @@ import { dirname, join } from 'path';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
-import { registerSocketHandlers } from './handlers/socket.js';
+import { registerSocketHandlers, broadcastShutdown } from './handlers/socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,15 +62,24 @@ app.use(errorHandler);
 function shutdown(signal) {
   logger.info({ signal }, 'Shutdown signal received, closing server...');
 
-  // Close all WebSocket connections first.
-  // Without this, httpServer.close() waits for keep-alive connections to drain
-  // which, for WebSockets, means waiting forever.
-  io.disconnectSockets(true);
+  // Step 1: Warn all connected clients before tearing down anything.
+  // broadcastShutdown must fire before disconnectSockets — once sockets are
+  // closed the emit packet never reaches clients.
+  broadcastShutdown(io);
 
-  httpServer.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
+  // Step 2: Wait ~300 ms so the broadcast packet has time to reach clients
+  // over a LAN Wi-Fi link before the transport is torn down.
+  setTimeout(() => {
+    // Step 3: Close all WebSocket connections.
+    // Without this, httpServer.close() waits for keep-alive connections to
+    // drain which, for WebSockets, means waiting forever.
+    io.disconnectSockets(true);
+
+    httpServer.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+  }, 300);
 
   // Force-kill if graceful close stalls
   setTimeout(() => {
