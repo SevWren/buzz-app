@@ -63,19 +63,24 @@ if !ERRORLEVEL! neq 0 (
     exit /b 1
 )
 
-:: ── Step 5: Launch directly via node — NOT via npm ───────────────────────────
+:: ── Step 5: Launch directly via node — no wrappers ──────────────────────────
 ::
-::  Why not `npm run dev`?
-::  When the user presses Ctrl+C, Windows sends CTRL_C_EVENT to every process
-::  in the console. npm receives it and calls TerminateProcess() on its child
-::  (node.exe) before the server's graceful-shutdown handler has time to emit
+::  Why not `npm run dev` or `node --watch`?
+::  Both spawn the real server as a CHILD process. On Windows, when the user
+::  presses Ctrl+C the parent (npm or the --watch watcher) calls
+::  TerminateProcess() on the child before the SIGINT handler has time to emit
 ::  the server-shutdown broadcast to connected clients (~300 ms window needed).
-::  Removing npm from the chain means node --watch handles the signal itself,
-::  forwards it to the server child process, and waits for a clean exit.
+::
+::  Running node src/server.js directly makes the server the immediate child
+::  of cmd.exe. Ctrl+C sends CTRL_C_EVENT straight to node.exe, which Node
+::  converts to SIGINT and delivers to our process.on('SIGINT') handler.
+::
+::  Note: dotenv is already imported inside src/config/index.js so --env-file
+::  is not needed here.
 ::
 echo  Launching server...
 echo.
-node --watch --env-file=.env src/server.js
+node src/server.js
 
 :: ── Step 6: Keep the window open so the user can read any error output ────────
 echo.
