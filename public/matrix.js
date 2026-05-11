@@ -302,11 +302,12 @@ export class GlitchSequencer {
     window.addEventListener('resize', () => this._setupMsgCanvas());
   }
 
-  async trigger(customMessage) {
+  // forceAnimation: true bypasses prefers-reduced-motion (used by __matrixTest)
+  async trigger(customMessage, { forceAnimation = false } = {}) {
     if (this._phase !== 'idle') return;
     this._phase = 'running';
 
-    if (prefersReducedMotion()) {
+    if (!forceAnimation && prefersReducedMotion()) {
       this._showStatic(customMessage);
       return;
     }

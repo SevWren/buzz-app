@@ -19,10 +19,11 @@ const sequencer = new GlitchSequencer(
   document.getElementById('matrix-a11y'),
 );
 
-// Development test hook — call window.__matrixTest() in browser console
-if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-  window.__matrixTest = (msg) => sequencer.trigger(msg ?? 'Test shutdown message.');
-}
+// Debug hook — always registered on window.
+// Bypasses prefers-reduced-motion so the full animation is visible regardless
+// of OS accessibility settings. Works from any hostname (localhost, LAN IP, etc).
+// Usage: window.__matrixTest()  or  window.__matrixTest('custom message')
+window.__matrixTest = (msg) => sequencer.trigger(msg ?? 'Test shutdown message.', { forceAnimation: true });
 
 // --- Connection lifecycle ---
 socket.on('connect', () => {
