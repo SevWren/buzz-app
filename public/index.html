@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buzz App</title>
+  <style>
+    :root {
+      --bg:        #f0f2f5;
+      --surface:   #ffffff;
+      --border:    #e0e4ea;
+      --text:      #1a1a2e;
+      --muted:     #6b7280;
+      --buzz:      #ff6b35;
+      --send:      #4f8ef7;
+      --green:     #16a34a;
+      --red:       #dc2626;
+      --radius:    10px;
+      --shadow:    0 4px 24px rgba(0,0,0,0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 2rem 1rem;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+
+    .conn-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .conn-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .conn-dot.connected    { background: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,.2); }
+    .conn-dot.connecting   { background: #f59e0b; animation: pulse 1s infinite; }
+    .conn-dot.disconnected { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* ── Input ── */
+    input[type="text"] {
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus       { border-color: var(--send); }
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    /* ── Buttons ── */
+    .btn-row { display: flex; gap: 0.75rem; }
+
+    .btn {
+      flex: 1;
+      padding: 0.65rem 0.75rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s, transform 0.1s;
+    }
+    .btn:hover:not(:disabled)  { filter: brightness(1.08); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled              { opacity: 0.4; cursor: not-allowed; }
+    .btn-buzz { background: var(--buzz); color: #fff; }
+    .btn-send { background: var(--send); color: #fff; }
+
+    /* ── Event log ── */
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .log-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .btn-clear {
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .btn-clear:hover { color: var(--text); }
+
+    .log-list {
+      list-style: none;
+      max-height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding-right: 2px;
+    }
+    .log-list::-webkit-scrollbar       { width: 4px; }
+    .log-list::-webkit-scrollbar-track { background: transparent; }
+    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .log-item {
+      display: flex;
+      gap: 0.6rem;
+      font-size: 0.84rem;
+      align-items: baseline;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      animation: slideIn 0.18s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-time {
+      font-size: 0.72rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-text { color: var(--text); word-break: break-word; }
+
+    .log-item.log-client { background: #eff6ff; }
+    .log-item.log-server { background: #f0fdf4; }
+    .log-item.log-error  { background: #fef2f2; }
+    .log-item.log-error  .log-text { color: var(--red); }
+    .log-item.log-system { background: #f9fafb; }
+    .log-item.log-system .log-text { color: var(--muted); }
+
+    .log-empty {
+      font-size: 0.84rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 1.25rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <header>
+      <h1>Buzz App</h1>
+      <div class="conn-badge" role="status" aria-live="polite" aria-label="Connection status">
+        <span id="conn-dot" class="conn-dot disconnected" aria-hidden="true"></span>
+        <span id="conn-label">Disconnected</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off" maxlength="500" />
+      <div class="btn-row">
+        <button id="btn-buzz" class="btn btn-buzz" disabled>Buzz Dad</button>
+        <button id="btn-send" class="btn btn-send" disabled>Send Message</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="log-header">
+        <span class="log-title">Event Log</span>
+        <button class="btn-clear" id="btn-clear">Clear</button>
+      </div>
+      <ul id="log-list" class="log-list" aria-live="polite" aria-label="Event log">
+        <li class="log-empty" id="log-empty">No events yet.</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
