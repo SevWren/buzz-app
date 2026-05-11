@@ -56,7 +56,7 @@ export class MatrixRain {
     this._H         = 0;
     this._dpr       = 1;
     this._running   = false;
-    this._pausedSet = new Set();
+    this._msgZone   = null;   // active message bounds for glow-boost interaction
     this._spikeNext = 50;     // frames until next random glow spike
     this._frame     = 0;
     this._baseFont  = `${FONT_SIZE}px "Share Tech Mono", "Courier New", monospace`;
@@ -84,23 +84,14 @@ export class MatrixRain {
     if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
 
-  // Pause columns whose x falls within [xStart-pad, xEnd+pad] (audit #40)
-  colsForRect(xStart, xEnd) {
-    const pad = this._colStride * 2;
-    const result = [];
-    for (let i = 0; i < this._cols.length; i++) {
-      const cx = this._cols[i].x;
-      if (cx + this._colStride >= xStart - pad && cx <= xEnd + pad) result.push(i);
-    }
-    return result;
+  // Register the active message zone so rain heads glow as they pass through it.
+  // Rain is never paused — it always flows behind the message canvas (z-index 1001).
+  setMessageZone(x1, x2, centerY) {
+    this._msgZone = { x1, x2, centerY };
   }
 
-  pause(indices) {
-    for (const i of indices) { this._pausedSet.add(i); if (this._cols[i]) this._cols[i].active = false; }
-  }
-
-  resume(indices) {
-    for (const i of indices) { this._pausedSet.delete(i); if (this._cols[i]) this._cols[i].active = true; }
+  clearMessageZone() {
+    this._msgZone = null;
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -168,7 +159,6 @@ export class MatrixRain {
       mutateTimer:    0,
       glowIntensity:  0.6 + Math.random() * 0.4,
       glowSpikeTimer: 0,
-      active:         true,
     };
   }
 
@@ -232,8 +222,6 @@ export class MatrixRain {
     }
 
     for (const col of this._cols) {
-      if (!col.active) continue;
-
       // Glow spike countdown (audit #7)
       if (col.glowSpikeTimer > 0) {
         col.glowSpikeTimer--;
@@ -266,10 +254,22 @@ export class MatrixRain {
       const alpha      = lerp(0.10, 0.92, brightness);
 
       if (j === 0) {
+        // Light-interaction: when head passes through the message zone, boost glow
+        // so rain visibly "interacts" with the message text rather than ignoring it.
+        let effectiveGlow = col.glowIntensity;
+        if (this._msgZone) {
+          const mz = this._msgZone;
+          if (col.x >= mz.x1 - this._colStride * 3 && col.x <= mz.x2 + this._colStride * 3) {
+            const dist = Math.abs(charY - mz.centerY);
+            if (dist < 80) {
+              effectiveGlow = Math.min(2.0, effectiveGlow + (1 - dist / 80) * 1.2);
+            }
+          }
+        }
         // Head — glow only on leading char, keeps shadow call count low (audit #9)
-        ctx.shadowBlur  = (spiking ? 22 : 15) * col.glowIntensity;
+        ctx.shadowBlur  = (spiking ? 22 : 15) * effectiveGlow;
         ctx.shadowColor = '#00ff41';
-        ctx.fillStyle   = spiking ? 'rgb(255,255,255)' : 'rgb(230,255,230)';
+        ctx.fillStyle   = (spiking || effectiveGlow > 1.2) ? 'rgb(255,255,255)' : 'rgb(230,255,230)';
       } else {
         ctx.shadowBlur = 0;  // reset each char so no bleed to next column (audit #11)
         ctx.fillStyle  = `rgba(0,${green},${Math.floor(green * 0.08)},${alpha.toFixed(2)})`;
@@ -602,19 +602,18 @@ export class GlitchSequencer {
     const chars = this._computeLayout(text);
     this._chars = chars;
 
-    // Pause rain columns behind the message text (audit #40)
-    const xs       = chars.filter(c => c.finalChar !== ' ').map(c => c.x);
-    const xMin     = Math.min(...xs);
-    const xMax     = Math.max(...xs) + (chars[0]?.fontSize || FONT_SIZE);
-    const rainCols = this._rain.colsForRect(xMin, xMax);
-    // Pause 500ms before ripple starts so decay naturally clears the zone
-    this._rain.pause(rainCols);
-    await sleep(500);
+    // Register message zone for rain glow-boost interaction.
+    // Rain is NEVER paused — it flows behind the message canvas (z-index 1001).
+    // Pausing columns created a solid black void in the center of the screen.
+    const xs      = chars.filter(c => c.finalChar !== ' ').map(c => c.x);
+    const xMin    = Math.min(...xs);
+    const xMax    = Math.max(...xs) + (chars[0]?.fontSize || FONT_SIZE);
+    const centerY = chars[0]?.y ?? this._H / 2;
+    this._rain.setMessageZone(xMin, xMax, centerY);
 
-    // Ripple-in from center outward (audit #30 fix: center→out for entry)
-    // Group chars per line for per-line center calculation
-    const lines   = this._groupLines(chars);
-    const rippleMs = await this._rippleIn(lines);
+    // Ripple-in from center outward
+    const lines = this._groupLines(chars);
+    await this._rippleIn(lines);
 
     // Wait for last char's glitch-in to complete + settle buffer
     await sleep(370 + 120);
@@ -629,16 +628,15 @@ export class GlitchSequencer {
           ch.microGlitchAt = performance.now() + 1500 + Math.random() * 2500;
         }
       }
-      return; // never falls
+      return; // never falls — zone stays registered forever
     }
 
     // Fall — edge-inward order (outermost characters fall first) (audit #30)
     await this._triggerFall(lines);
 
-    // Wait for fall to complete
+    // Wait for fall to complete, then clear zone and chars
     await sleep(1000);
-
-    this._rain.resume(rainCols);
+    this._rain.clearMessageZone();
     this._chars = [];
   }
 
