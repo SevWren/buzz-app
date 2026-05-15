@@ -4,3 +4,7 @@ node_modules/
 *.log
 data/
 coverage/
+# Never commit backup/temp files into public/ — they are served by express.static
+public/*.bak
+public/*.original
+public/*.tmp

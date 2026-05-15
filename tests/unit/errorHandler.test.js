@@ -165,16 +165,18 @@ describe('errorHandler middleware', () => {
 
   // ── Non-object error types ────────────────────────────────────────────────
 
-  it('throws TypeError when err is null (accessing .status of null)', () => {
-    // The handler has no null guard — this documents the existing crash behavior
-    expect(() => errorHandler(null, req, res, next)).toThrow(TypeError);
+  it('handles null error gracefully — responds 500 without throwing', () => {
+    // The null guard normalises null to new Error('Internal Server Error')
+    expect(() => errorHandler(null, req, res, next)).not.toThrow();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: { message: 'Internal Server Error' } });
   });
 
-  it('handles string error without throwing (string.status is undefined → 500)', () => {
+  it('handles string error without throwing', () => {
+    // String 'oops' → new Error('oops') → message is 'oops'
     errorHandler('oops', req, res, next);
     expect(res.status).toHaveBeenCalledWith(500);
-    // string.message is undefined → falls back to 'Internal Server Error'
-    expect(res.json).toHaveBeenCalledWith({ error: { message: 'Internal Server Error' } });
+    expect(res.json).toHaveBeenCalledWith({ error: { message: 'oops' } });
   });
 
   // ── Production 5xx message masking ────────────────────────────────────────

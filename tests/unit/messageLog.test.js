@@ -116,6 +116,28 @@ describe('appendMessage', () => {
     );
   });
 
+  it('returns immediately without writing if record is null (input guard)', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage(null);
+    expect(appendFile).not.toHaveBeenCalled();
+  });
+
+  it('coerces non-string direction to empty string before persisting', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 42, type: 'buzz', socketId: 'x', payload: {} });
+    const [, content] = appendFile.mock.calls[0];
+    const record = JSON.parse(content.trim());
+    expect(record.direction).toBe('');
+  });
+
+  it('coerces non-object payload to {} before persisting', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: 'bad' });
+    const [, content] = appendFile.mock.calls[0];
+    const record = JSON.parse(content.trim());
+    expect(record.payload).toEqual({});
+  });
+
   it('does not throw when mkdir rejects (all errors swallowed)', async () => {
     mkdir.mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
     const { appendMessage } = await getModule();

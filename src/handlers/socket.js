@@ -104,12 +104,15 @@ export function registerSocketHandlers(io) {
   }
 
   io.on('connection', (socket) => {
-    logger.info({ socketId: socket.id }, 'Client connected');
+    logger.info(
+      { socketId: socket.id, address: socket.handshake?.address },
+      'Client connected',
+    );
 
     // ── buzz-dad ─────────────────────────────────────────────────────────────
     socket.on('buzz-dad', () => {
       if (buzzLimiter.isLimited(socket.id, BUZZ_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'buzz-dad rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'buzz-dad rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many buzzes.' });
         return;
       }
@@ -124,7 +127,7 @@ export function registerSocketHandlers(io) {
     // ── send-message ──────────────────────────────────────────────────────────
     socket.on('send-message', (data, callback) => {
       if (msgLimiter.isLimited(socket.id, MSG_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'send-message rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'send-message rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many messages.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -152,7 +155,7 @@ export function registerSocketHandlers(io) {
     // ── quick-need ────────────────────────────────────────────────────────────
     socket.on('quick-need', (data, callback) => {
       if (quickLimiter.isLimited(socket.id, QUICK_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'quick-need rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'quick-need rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many requests.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -179,7 +182,7 @@ export function registerSocketHandlers(io) {
     // ── set-status ────────────────────────────────────────────────────────────
     socket.on('set-status', (data, callback) => {
       if (statusLimiter.isLimited(socket.id, STATUS_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'set-status rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'set-status rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many status updates.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -206,7 +209,7 @@ export function registerSocketHandlers(io) {
     // ── location-ping ─────────────────────────────────────────────────────────
     socket.on('location-ping', (data, callback) => {
       if (locationLimiter.isLimited(socket.id, LOCATION_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'location-ping rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'location-ping rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many location pings.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -233,7 +236,7 @@ export function registerSocketHandlers(io) {
     // ── battery-low ───────────────────────────────────────────────────────────
     socket.on('battery-low', (data, callback) => {
       if (batteryLimiter.isLimited(socket.id, BATTERY_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'battery-low rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'battery-low rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many battery alerts.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -261,7 +264,7 @@ export function registerSocketHandlers(io) {
     // ── countdown-start ───────────────────────────────────────────────────────
     socket.on('countdown-start', (data, callback) => {
       if (countdownLimiter.isLimited(socket.id, COUNTDOWN_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'countdown-start rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'countdown-start rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many countdowns.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -294,7 +297,7 @@ export function registerSocketHandlers(io) {
       }
 
       if (replyLimiter.isLimited(socket.id, REPLY_LIMIT)) {
-        logger.warn({ socketId: socket.id }, 'send-reply rate limit exceeded');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'send-reply rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many replies.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
@@ -351,7 +354,12 @@ export function registerSocketHandlers(io) {
     });
 
     socket.on('error', (err) => {
-      logger.error({ socketId: socket.id, err }, 'Socket error');
+      // Log only message and code — never the full err object, which can
+      // contain stack traces with local file paths or other internal details.
+      logger.error(
+        { socketId: socket.id, errMessage: err?.message, errCode: err?.code },
+        'Socket error',
+      );
     });
   });
 }

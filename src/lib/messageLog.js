@@ -18,14 +18,28 @@ const DATA_DIR   = join(__dirname, '..', '..', 'data');
  * @returns {Promise<void>}
  */
 export async function appendMessage(record) {
+  // Validate and coerce all fields to their expected types before persisting.
+  // socket.js always passes correct types, but defensive coercion prevents
+  // accidental non-string values from corrupting the JSONL log or bypassing
+  // any downstream parsing that depends on field types.
+  if (!record || typeof record !== 'object') return;
+
+  const direction = typeof record.direction === 'string' ? record.direction : '';
+  const type      = typeof record.type      === 'string' ? record.type      : '';
+  const socketId  = typeof record.socketId  === 'string' ? record.socketId  : '';
+  const payload   =
+    record.payload !== null && typeof record.payload === 'object'
+      ? record.payload
+      : {};
+
   const line =
     JSON.stringify({
       id:        randomUUID(),
       ts:        new Date().toISOString(),
-      direction: record.direction,
-      type:      record.type,
-      socketId:  record.socketId,
-      payload:   record.payload,
+      direction,
+      type,
+      socketId,
+      payload,
     }) + '\n';
   try {
     await mkdir(DATA_DIR, { recursive: true });

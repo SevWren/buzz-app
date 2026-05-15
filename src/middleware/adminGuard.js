@@ -10,8 +10,14 @@ import { logger } from '../lib/logger.js';
  * @param {import('express').NextFunction} next
  */
 export function adminGuard(req, res, next) {
-  const raw        = req.ip ?? req.socket?.remoteAddress ?? '';
-  const normalized = raw.replace('::ffff:', '');
+  const raw = req.ip ?? req.socket?.remoteAddress ?? '';
+
+  // Strip IPv4-mapped IPv6 prefix and lower-case for consistent comparison.
+  // .replace() (first occurrence only) is intentional — replaceAll() on a
+  // crafted string like '::ffff:::ffff:127.0.0.1' would strip both prefixes
+  // and incorrectly normalise it to '127.0.0.1', bypassing the guard.
+  const normalized = raw.replace('::ffff:', '').toLowerCase();
+
   const isLocal    =
     normalized === '127.0.0.1' ||
     normalized === '::1'       ||

@@ -31,6 +31,11 @@ describe('GET /admin/', () => {
     const res = await request(app).get('/admin/');
     expect(res.headers['content-type']).toMatch(/text\/html/);
   });
+
+  it('sets Cache-Control: no-store to prevent caching the admin panel', async () => {
+    const res = await request(app).get('/admin/');
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
 });
 
 describe('GET /admin/history', () => {
@@ -95,5 +100,10 @@ describe('GET /admin/history', () => {
     mockReadRecentMessages.mockClear();
     await request(app).get('/admin/history');
     expect(mockReadRecentMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets Cache-Control: no-store to prevent caching sensitive message history', async () => {
+    const res = await request(app).get('/admin/history');
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 });

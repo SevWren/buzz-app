@@ -168,7 +168,9 @@ function addBubble(msg, opts = {}) {
   if (msg.type === 'location' && msg.payload) {
     // Render location as "📍 coords — [Open in Maps]" with a real clickable link
     const { lat, lng, accuracy } = msg.payload;
-    const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    // Use URLSearchParams to safely encode coordinate values into the URL
+    // rather than raw template-string interpolation.
+    const mapsUrl = `https://maps.google.com/?${new URLSearchParams({ q: `${lat},${lng}` })}`;
     textEl.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m) — `;
     const link = document.createElement('a');
     link.href        = mapsUrl;

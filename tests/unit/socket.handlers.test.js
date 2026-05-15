@@ -34,7 +34,9 @@ function createMockSocket() {
   const handlers = new Map();
   return {
     id,
-    data: { isAdmin: false },
+    data:     { isAdmin: false },
+    // Realistic handshake object — used by rate-limit and connection logs
+    handshake: { address: '127.0.0.1' },
     on:   vi.fn((event, handler) => handlers.set(event, handler)),
     emit: vi.fn(),
     // Simulate an incoming event from the client
@@ -100,10 +102,10 @@ describe('registerSocketHandlers', () => {
       expect(socket.on).toHaveBeenCalledWith('error',           expect.any(Function));
     });
 
-    it('logs the connection with the socket id and exact message', () => {
+    it('logs the connection with the socket id, address, and exact message', () => {
       const { socket } = setup();
       expect(logger.info).toHaveBeenCalledWith(
-        expect.objectContaining({ socketId: socket.id }),
+        expect.objectContaining({ socketId: socket.id, address: '127.0.0.1' }),
         'Client connected',
       );
     });
@@ -969,12 +971,17 @@ describe('registerSocketHandlers', () => {
   // ── error ─────────────────────────────────────────────────────────────────
 
   describe('error event', () => {
-    it('logs socket errors with exact message "Socket error"', () => {
+    it('logs socket errors with errMessage/errCode (not the full err object) and exact message', () => {
       const { socket } = setup();
       const err = new Error('socket blew up');
       socket.receive('error', err);
+      // Source: { socketId, errMessage: err?.message, errCode: err?.code } — sanitized
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ socketId: socket.id, err }),
+        expect.objectContaining({
+          socketId:   socket.id,
+          errMessage: 'socket blew up',
+          errCode:    undefined,
+        }),
         'Socket error',
       );
     });

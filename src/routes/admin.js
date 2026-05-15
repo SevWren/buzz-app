@@ -17,6 +17,9 @@ router.use(adminGuard);
  * Serves the admin HTML page.
  */
 router.get('/', (_req, res) => {
+  // no-store: prevent the browser or proxy caching the admin panel;
+  // a cached version could expose the UI after the session ends.
+  res.set('Cache-Control', 'no-store');
   res.sendFile(join(__dirname, '..', '..', 'public', 'admin.html'));
 });
 
@@ -28,6 +31,9 @@ router.get('/', (_req, res) => {
 router.get('/history', async (_req, res, next) => {
   try {
     const messages = await readRecentMessages(100);
+    // no-store: message history is sensitive — must not be cached by
+    // browsers or proxies where other users could read it.
+    res.set('Cache-Control', 'no-store');
     res.json({ messages });
   } catch (err) {
     next(err);

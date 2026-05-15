@@ -27,9 +27,35 @@ vi.mock('../../src/middleware/adminGuard.js', () => ({
 
 function buildApp() {
   const app = express();
-  app.use(helmet({ contentSecurityPolicy: false }));
-  app.use(cors({ origin: '*' }));
-  app.use(express.json({ limit: '10kb' }));
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc:     ["'self'"],
+        scriptSrc:      ["'self'"],
+        styleSrc:       ["'self'", "'unsafe-inline'"],
+        connectSrc:     ["'self'", 'ws:', 'wss:'],
+        fontSrc:        ["'self'", 'data:'],
+        imgSrc:         ["'self'", 'data:'],
+        objectSrc:      ["'none'"],
+        baseUri:        ["'self'"],
+        formAction:     ["'self'"],
+        frameAncestors: ["'none'"],
+        workerSrc:      ["'none'"],
+      },
+    },
+    referrerPolicy:           { policy: 'no-referrer' },
+    crossOriginOpenerPolicy:  { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+  }));
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+    );
+    next();
+  });
+  app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], exposedHeaders: [] }));
+  app.use(express.json({ limit: '10kb', strict: true }));
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
@@ -105,6 +131,39 @@ describe('HTTP integration', () => {
       const res = await request(app).get('/api/health');
       expect(res.headers['strict-transport-security']).toBeDefined();
       expect(res.headers['strict-transport-security']).toContain('max-age=');
+    });
+
+    it('sets Content-Security-Policy header (CSP re-enabled)', async () => {
+      const res = await request(app).get('/api/health');
+      const csp = res.headers['content-security-policy'];
+      expect(csp).toBeDefined();
+      expect(csp).toContain("default-src 'self'");
+      expect(csp).toContain("frame-ancestors 'none'");
+      expect(csp).toContain("object-src 'none'");
+    });
+
+    it('sets Referrer-Policy: no-referrer', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.headers['referrer-policy']).toBe('no-referrer');
+    });
+
+    it('sets Cross-Origin-Opener-Policy: same-origin', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
+    });
+
+    it('sets Cross-Origin-Resource-Policy: same-origin', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+    });
+
+    it('sets Permissions-Policy restricting camera, microphone, geolocation', async () => {
+      const res = await request(app).get('/api/health');
+      const pp = res.headers['permissions-policy'];
+      expect(pp).toBeDefined();
+      expect(pp).toContain('camera=()');
+      expect(pp).toContain('microphone=()');
+      expect(pp).toContain('geolocation=()');
     });
 
     it('does not expose X-Powered-By', async () => {
