@@ -42,6 +42,7 @@ console.log(`\n  ${bar}`);
 console.log(`   Buzz App`);
 console.log(`  ${bar}`);
 console.log(`   Local    →  http://localhost:${port}`);
+console.log(`   Admin    →  http://localhost:${port}/admin  ← Dad's reply panel`);
 for (const ip of lanIPs) {
   console.log(`   Network  →  http://${ip}:${port}   ← phone / other devices`);
 }

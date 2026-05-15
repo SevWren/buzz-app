@@ -272,19 +272,19 @@
     .btn-buzz { background: var(--buzz); color: #fff; }
     .btn-send { background: var(--send); color: #fff; }
 
-    /* ── Event log ───────────────────────────────────────────────────────────── */
-    .log-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
+    /* ── Shared label style ──────────────────────────────────────────────────── */
     .log-title {
       font-size: 0.75rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--muted);
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .btn-clear {
@@ -301,65 +301,124 @@
       .btn-clear:hover { color: var(--text); }
     }
 
-    .log-list {
+    /* ── Quick-need & status grids ───────────────────────────────────────────── */
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 0.5rem;
+    }
+
+    .btn-need {
+      background: var(--buzz);
+      color: #fff;
+    }
+
+    .btn-status {
+      background: color-mix(in oklch, var(--send) 15%, var(--surface));
+      color: var(--text);
+      border: 1.5px solid var(--border);
+    }
+
+    .btn-location {
+      background: var(--green);
+      color: #fff;
+      flex: 1;
+    }
+
+    .btn-battery {
+      background: var(--red);
+      color: #fff;
+      flex: 1;
+    }
+
+    .btn-countdown {
+      background: color-mix(in oklch, var(--muted) 18%, var(--surface));
+      color: var(--text);
+      border: 1.5px solid var(--border);
+      flex: 1;
+    }
+
+    .countdown-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0 0;
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+
+    .countdown-text { font-variant-numeric: tabular-nums; }
+
+    /* ── Conversation thread ─────────────────────────────────────────────────── */
+    .thread-list {
       list-style: none;
-      max-height: 280px;
+      max-height: 320px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
+      gap: 0.5rem;
       padding-right: 4px;
-      overscroll-behavior: contain; /* prevents scroll chaining to the body */
-      /* Standard scrollbar API — supported Chrome 121+, Firefox 64+, Safari 18+ */
+      overscroll-behavior: contain;
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
     }
-    /* WebKit fallback — still the only way to tint scrollbar colors in older Safari */
-    .log-list::-webkit-scrollbar       { width: 4px; }
-    .log-list::-webkit-scrollbar-track { background: transparent; }
-    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .thread-list::-webkit-scrollbar       { width: 4px; }
+    .thread-list::-webkit-scrollbar-track { background: transparent; }
+    .thread-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-    /* Log-item entry animation via @starting-style ──────────────────────────────
-     * @starting-style defines the FROM state at the moment an element is first
-     * inserted into the DOM. The browser immediately transitions to the normal
-     * state, replacing the old @keyframes slideIn hack. Requires the property
-     * to already be listed in `transition` on the element itself.               */
-    .log-item {
+    .bubble {
       display: flex;
-      gap: 0.6rem;
-      font-size: 0.84rem;
-      align-items: baseline;
-      padding: 0.35rem 0.65rem;
-      border-radius: 6px;
+      flex-direction: column;
+      max-width: 85%;
+      padding: 0.5rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.88rem;
+      line-height: 1.4;
       opacity: 1;
       transform: translateY(0);
       transition: opacity 0.22s ease, transform 0.22s ease;
     }
     @starting-style {
-      .log-item { opacity: 0; transform: translateY(-5px); }
+      .bubble { opacity: 0; transform: translateY(4px); }
     }
 
-    .log-time {
+    /* Son's messages — left-aligned, blue tint */
+    .bubble.bubble-in {
+      align-self: flex-start;
+      background: color-mix(in oklch, var(--send) 11%, var(--surface));
+      border-bottom-left-radius: 4px;
+    }
+
+    /* Dad's replies — right-aligned, orange tint */
+    .bubble.bubble-out {
+      align-self: flex-end;
+      background: color-mix(in oklch, var(--buzz) 11%, var(--surface));
+      border-bottom-right-radius: 4px;
+    }
+
+    /* Error bubbles */
+    .bubble.bubble-error {
+      align-self: flex-start;
+      background: color-mix(in oklch, var(--red) 9%, var(--surface));
+      color: var(--red);
+      font-size: 0.82rem;
+      border-radius: 8px;
+    }
+
+    .bubble-meta {
       font-size: 0.72rem;
       color: var(--muted);
-      flex-shrink: 0;
-      font-variant-numeric: tabular-nums;
+      margin-top: 0.2rem;
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
     }
-    .log-text { color: var(--text); word-break: break-word; }
+    .bubble-in  .bubble-meta { justify-content: flex-start; }
+    .bubble-out .bubble-meta { justify-content: flex-end; }
 
-    /* color-mix() blends the type's accent color into --surface at a low ratio.
-     * Because --surface is token-driven, these backgrounds automatically become
-     * dark in dark mode — no separate @media (prefers-color-scheme: dark) block
-     * needed for log items.                                                      */
-    .log-item.log-client { background: color-mix(in oklch, var(--send)  11%, var(--surface)); }
-    .log-item.log-server { background: color-mix(in oklch, var(--green) 11%, var(--surface)); }
-    .log-item.log-error  { background: color-mix(in oklch, var(--red)    9%, var(--surface)); }
-    .log-item.log-system { background: color-mix(in oklch, var(--muted)  7%, var(--surface)); }
+    .read-receipt { color: var(--green); }
 
-    .log-item.log-error  .log-text { color: var(--red); }
-    .log-item.log-system .log-text { color: var(--muted); }
-
-    .log-empty {
+    .thread-empty {
       font-size: 0.84rem;
       color: var(--muted);
       text-align: center;
@@ -465,7 +524,7 @@
       .conn-dot.connecting { animation: none; }
       .btn                 { transition: filter 0.15s ease; }
       .btn::after          { display: none; }
-      .log-item            { transition: none; }
+      .bubble              { transition: none; }
       .app.matrix-corrupting { animation: none; }
       #matrix-scene::after   { animation: none; }
     }
@@ -483,20 +542,65 @@
     </header>
 
     <div class="card">
-      <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off" maxlength="500" />
+      <input type="text" id="msg-input" placeholder="Type a message…" autocomplete="off" maxlength="500" />
       <div class="btn-row">
         <button id="btn-buzz" class="btn btn-buzz" disabled>Buzz Dad</button>
         <button id="btn-send" class="btn btn-send" disabled>Send Message</button>
       </div>
     </div>
 
-    <div class="card">
-      <div class="log-header">
-        <span class="log-title">Event Log</span>
-        <button class="btn-clear" id="btn-clear">Clear</button>
+    <!-- Card A: Quick Need -->
+    <div class="card" id="quick-need-card">
+      <span class="log-title">Quick Need</span>
+      <div class="btn-grid">
+        <button class="btn btn-need" id="btn-need-pickup" data-need="Pickup"  disabled>🚗 Pickup</button>
+        <button class="btn btn-need" id="btn-need-food"   data-need="Food"    disabled>🍕 Food</button>
+        <button class="btn btn-need" id="btn-need-money"  data-need="Money"   disabled>💸 Money</button>
+        <button class="btn btn-need" id="btn-need-callme" data-need="Call Me" disabled>📞 Call Me</button>
+        <button class="btn btn-need" id="btn-need-help"   data-need="Help"    disabled>🆘 Help</button>
       </div>
-      <ul id="log-list" class="log-list" aria-live="polite" aria-label="Event log">
-        <li class="log-empty" id="log-empty">No events yet.</li>
+    </div>
+
+    <!-- Card B: Status + Location + Battery -->
+    <div class="card" id="status-card">
+      <span class="log-title">Status</span>
+      <div class="btn-grid">
+        <button class="btn btn-status" id="btn-status-tired"  data-emoji="😴" data-label="Tired"        disabled>😴 Tired</button>
+        <button class="btn btn-status" id="btn-status-hungry" data-emoji="🍔" data-label="Hungry"       disabled>🍔 Hungry</button>
+        <button class="btn btn-status" id="btn-status-school" data-emoji="🏫" data-label="At School"    disabled>🏫 At School</button>
+        <button class="btn btn-status" id="btn-status-home"   data-emoji="🏠" data-label="Heading Home" disabled>🏠 Heading Home</button>
+        <button class="btn btn-status" id="btn-status-good"   data-emoji="✅" data-label="All Good"     disabled>✅ All Good</button>
+        <button class="btn btn-status" id="btn-status-upset"  data-emoji="😢" data-label="Upset"        disabled>😢 Upset</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-location" id="btn-location" disabled>📍 Send Location</button>
+        <button class="btn btn-battery"  id="btn-battery"  disabled>🔋 Battery Low</button>
+      </div>
+    </div>
+
+    <!-- Card C: Countdown -->
+    <div class="card" id="countdown-card">
+      <span class="log-title">I'll Be Ready In…</span>
+      <div class="btn-row">
+        <button class="btn btn-countdown" id="btn-cd-5"  data-minutes="5"  disabled>5 min</button>
+        <button class="btn btn-countdown" id="btn-cd-10" data-minutes="10" disabled>10 min</button>
+        <button class="btn btn-countdown" id="btn-cd-15" data-minutes="15" disabled>15 min</button>
+        <button class="btn btn-countdown" id="btn-cd-30" data-minutes="30" disabled>30 min</button>
+      </div>
+      <div id="countdown-display" class="countdown-display" hidden>
+        <span id="countdown-text" class="countdown-text"></span>
+        <button id="btn-countdown-cancel" class="btn-clear">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Card D: Conversation thread -->
+    <div class="card" id="thread-card">
+      <div class="log-header">
+        <span class="log-title">Conversation</span>
+        <button class="btn-clear" id="btn-clear-thread">Clear</button>
+      </div>
+      <ul id="thread-list" class="thread-list" aria-live="polite" aria-label="Message thread">
+        <li class="thread-empty" id="thread-empty">No messages yet.</li>
       </ul>
     </div>
 

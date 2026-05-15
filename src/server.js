@@ -11,6 +11,7 @@ import { dirname, join } from 'path';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
+import adminRouter from './routes/admin.js';
 import { registerSocketHandlers, broadcastShutdown } from './handlers/socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,20 @@ app.use(
 // --- Static & routes ---
 app.use(express.static(join(__dirname, '..', 'public')));
 app.use('/api', healthRouter);
+app.use('/admin', adminRouter);
+
+// --- Socket admin-auth middleware ---
+// Mark connections from localhost as admin sockets.
+// socket.data.isAdmin is checked in send-reply and admin-mark-read handlers.
+io.use((socket, next) => {
+  const raw        = socket.handshake.address;
+  const normalized = raw.replace('::ffff:', '');
+  socket.data.isAdmin =
+    normalized === '127.0.0.1' ||
+    normalized === '::1'       ||
+    normalized === 'localhost';
+  next();
+});
 
 // --- Socket handlers ---
 registerSocketHandlers(io);

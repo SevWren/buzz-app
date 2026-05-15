@@ -6,7 +6,7 @@
  * This means tests exercise real middleware interaction: helmet headers,
  * CORS, rate limiting, and routing, all wired together.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -14,6 +14,16 @@ import rateLimit from 'express-rate-limit';
 import request from 'supertest';
 import healthRouter from '../../src/routes/health.js';
 import { errorHandler } from '../../src/middleware/errorHandler.js';
+
+// Mock out file I/O — admin route uses messageLog
+vi.mock('../../src/lib/messageLog.js', () => ({
+  appendMessage:      vi.fn().mockResolvedValue(undefined),
+  readRecentMessages: vi.fn().mockResolvedValue([]),
+}));
+// Bypass the IP guard so supertest (localhost) behaves normally
+vi.mock('../../src/middleware/adminGuard.js', () => ({
+  adminGuard: (_req, _res, next) => next(),
+}));
 
 function buildApp() {
   const app = express();
@@ -29,6 +39,7 @@ function buildApp() {
     })
   );
   app.use('/api', healthRouter);
+  app.use(express.static('public'));
   app.use(errorHandler);
   return app;
 }
@@ -142,6 +153,46 @@ describe('HTTP integration', () => {
         .set('Content-Type', 'application/json')
         .send(okBody);
       expect(res.status).toBe(200);
+    });
+  });
+
+  // ── Admin routes ──────────────────────────────────────────────────────────
+
+  describe('GET /admin (via full app with admin router)', () => {
+    let adminApp;
+    beforeAll(async () => {
+      const { default: adminRouter } = await import('../../src/routes/admin.js');
+      adminApp = buildApp();
+      adminApp.use('/admin', adminRouter);
+    });
+
+    it('returns 200', async () => {
+      const res = await request(adminApp).get('/admin/');
+      expect(res.status).toBe(200);
+    });
+
+    it('returns content-type text/html', async () => {
+      const res = await request(adminApp).get('/admin/');
+      expect(res.headers['content-type']).toMatch(/text\/html/);
+    });
+  });
+
+  describe('GET /admin/history (via full app with admin router)', () => {
+    let adminApp;
+    beforeAll(async () => {
+      const { default: adminRouter } = await import('../../src/routes/admin.js');
+      adminApp = buildApp();
+      adminApp.use('/admin', adminRouter);
+    });
+
+    it('returns 200', async () => {
+      const res = await request(adminApp).get('/admin/history');
+      expect(res.status).toBe(200);
+    });
+
+    it('returns { messages: [] }', async () => {
+      const res = await request(adminApp).get('/admin/history');
+      expect(res.body).toEqual({ messages: [] });
     });
   });
 
