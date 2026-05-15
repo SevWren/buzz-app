@@ -1,12 +1,12 @@
 # Buzz App
 
-A real-time notification tool for your local network. Open the page on your phone, hit **Buzz Dad** or type a message — it pops up instantly on Dad's computer.
+A real-time family messaging tool for your local network. Your son opens the page on his phone and can buzz you, send messages, share his location, set a status, and more — everything pops up instantly on your computer with an audio alert. You reply from the admin panel.
 
 ---
 
-## Quick Start (the short version)
+## Quick Start
 
-**Windows** — just double-click `start.bat`. Done. It handles everything.
+**Windows** — double-click `start.bat`. Done. It handles everything.
 
 **Mac / Linux:**
 
@@ -16,45 +16,42 @@ npm install      # first time only
 npm run dev      # starts the server
 ```
 
-Then open **http://localhost:3000** in your browser.
-
-To use it from your phone or another device on the same Wi-Fi, use the **Network** address printed in the terminal when the server starts — it looks like `http://192.168.x.x:3000`.
+- **Son's phone** — open the Network address (`http://192.168.x.x:3000`)
+- **Dad's admin panel** — open `http://localhost:3000/admin` on the server computer
 
 ---
 
-## First-Time Setup (step by step)
+## First-Time Setup
 
-### 1. Install Node.js (if you haven't already)
+### 1. Install Node.js
 
-Go to **https://nodejs.org** and download the **LTS** version. Run the installer and click through — defaults are fine.
+Go to **https://nodejs.org** and download the **LTS** version. Run the installer — defaults are fine.
 
-To check it worked, open a terminal and run:
+Verify:
 
 ```
 node -v
 ```
 
-You should see something like `v22.x.x`. You need **v20.6 or higher**.
+You need **v20.6 or higher**.
 
-### 2. Get the app running
+### 2. Start the server
 
 **Windows** — double-click `start.bat` in the project folder. It will:
 - Check your Node.js version
 - Install dependencies automatically on first run
 - Start the server
 
-**Mac** — open Terminal, navigate to the project folder, then:
+**Mac / Linux:**
 
 ```bash
 npm install     # only needed once
 npm run dev
 ```
 
-**Linux** — same as Mac.
-
 ### 3. Open the app
 
-Once the server is running, your terminal will show something like:
+Once running, the terminal shows:
 
 ```
   ──────────────────────────────────────────────
@@ -67,48 +64,72 @@ Once the server is running, your terminal will show something like:
   ──────────────────────────────────────────────
 ```
 
-- Open the **Local** address on the computer running the server.
-- Open the **Network** address on your phone or any other device on the same Wi-Fi.
+- **Son's phone** — open the **Network** address on any device on the same Wi-Fi
+- **Dad's admin panel** — open `http://localhost:3000/admin` in the browser on the server computer (localhost-only)
 
-### 4. Using the app
-
-| What you want to do | How |
-|---------------------|-----|
-| Get Dad's attention | Click **Buzz Dad** |
-| Send a message | Type in the box, then click **Send Message** or press **Enter** |
-| See what happened | Check the **Event Log** at the bottom of the page |
-| Clear the log | Click **Clear** |
-
-The colored dot in the top-right corner shows your connection status:
+The colored dot in the top-right shows connection status:
 - **Green** — connected and ready
 - **Yellow (pulsing)** — reconnecting
-- **Red** — disconnected (is the server still running?)
+- **Red** — disconnected
 
-### 5. Stopping the server
+### 4. Stop the server
 
-Press **Ctrl+C** in the terminal window. The server will shut down cleanly.
+Press **Ctrl+C** in the terminal.
 
 ---
 
-## Troubleshooting
+## What Son Can Do (phone interface)
 
-**"node is not recognized" / "command not found"**
-Node.js is not installed or not on your PATH. Download it from https://nodejs.org and re-open your terminal after installing.
+| Action | How |
+|--------|-----|
+| Get Dad's attention | Tap **Buzz Dad** |
+| Send a message | Type in the box, tap **Send** or press Enter |
+| Quick needs | Tap one button: **Pickup**, **Food**, **Money**, **Call Me**, or **Help** |
+| Set a status | Tap an emoji: Tired, Hungry, At School, Heading Home, All Good, Upset |
+| Share location | Tap **Share My Location** (browser asks for permission first) |
+| Battery warning | Tap **My Phone is Dying** |
+| ETA countdown | Tap **5 min**, **10 min**, **15 min**, or **30 min** |
+| See Dad's reply | Replies appear in the conversation thread at the bottom |
 
-**Phone can't reach the Network address**
-Both devices must be on the same Wi-Fi network. Check that your firewall isn't blocking port 3000.
+## What Dad Can Do (admin panel at `/admin`)
 
-**Port 3000 is already in use**
-Edit `.env` (created automatically on first run) and change `PORT=3000` to any free port, e.g. `PORT=3001`.
+| Action | How |
+|--------|-----|
+| Read all messages | Full conversation thread loads on the page |
+| Reply | Type in the reply box, press Enter or click **Send Reply** |
+| Know when new messages arrive | Unread badge + tab title shows `(N) Buzz App — Admin` |
+| Mark messages read | Happens automatically when the tab is visible / focused |
+| See read receipts | Outbound replies show "Seen" when son views them |
+| Load past history | Last 100 messages load automatically on page open |
 
-**The server stopped unexpectedly**
-Read the error output in the terminal — it will tell you what went wrong. Common cause: invalid `.env` values. Delete `.env` to regenerate it from defaults.
+---
+
+## Persistent Message Log
+
+Every event is permanently saved to `data/messages.jsonl`. Each line is a JSON record:
+
+```json
+{"id":"...","ts":"2025-01-01T12:00:00.000Z","direction":"in","type":"message","socketId":"...","payload":{"text":"Can I get a ride?"}}
+```
+
+The log is append-only and never deleted automatically.
+
+---
+
+## Audio Alerts
+
+When a message or event arrives on the server, a distinct MP3 chime plays automatically. Different events play different chimes. No alert plays when Dad sends a reply (he is already at the keyboard).
+
+The server needs a system audio player:
+- **macOS** — `afplay` is built in, works automatically
+- **Linux** — install `mpg123`: `sudo apt install mpg123`
+- **Windows** — install `mplayer` and add it to your PATH
 
 ---
 
 ## Configuration
 
-On first run, a `.env` file is created automatically from `.env.example`. You can edit it any time:
+On first run, `.env` is created automatically from `.env.example`. Edit it any time:
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
@@ -116,6 +137,28 @@ On first run, a `.env` file is created automatically from `.env.example`. You ca
 | `NODE_ENV` | `development` | Runtime environment |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug` for more detail) |
 | `CORS_ORIGIN` | `*` | Restrict to a specific origin for production use |
+
+---
+
+## Troubleshooting
+
+**"node is not recognized" / "command not found"**
+Node.js is not installed or not on your PATH. Download from https://nodejs.org and re-open your terminal.
+
+**Phone can't reach the Network address**
+Both devices must be on the same Wi-Fi. Check that your firewall isn't blocking port 3000.
+
+**Port 3000 already in use**
+Edit `.env` and change `PORT=3000` to a free port, e.g. `PORT=3001`.
+
+**No audio alerts**
+See Audio Alerts section above — a system player must be installed.
+
+**Admin panel shows 403**
+The admin panel is only accessible from `localhost` (the machine running the server). It will refuse connections from any other IP by design.
+
+**Server stopped unexpectedly**
+Read the error in the terminal. Common cause: invalid `.env` value. Delete `.env` to regenerate from defaults.
 
 ---
 
@@ -132,3 +175,4 @@ npm run format        # Prettier
 **Stack:** Node.js 20+, Express 5, Socket.IO 4, Zod, Pino, Vitest.
 
 See `CLAUDE.md` for architecture details, coding conventions, and agent guidance.
+See `docs/` for full technical documentation.

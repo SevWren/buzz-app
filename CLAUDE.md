@@ -1,6 +1,6 @@
 # Buzz App — Agent Guide
 
-Real-time notification app: a browser client sends buzzes/messages to a Node.js server over Socket.IO. Intended as a local-network tool (phone pinging a desktop).
+Real-time family messaging app: a browser client on a phone sends buzzes, messages, location pings, status updates, and more to a Node.js server over Socket.IO. Dad replies from a localhost-only admin panel. All messages are permanently logged. Intended as a local-network tool.
 
 ## Commands
 
@@ -18,85 +18,185 @@ npm run format       # Prettier
 
 ## Environment Setup
 
-`.env` is auto-created from `.env.example` by `scripts/preflight.js` (runs as `predev`/`prestart` hook). Do not edit `.env.example` as the authoritative template.
+`.env` is auto-created from `.env.example` by `scripts/preflight.js` (runs as `predev`/`prestart` hook). Do not edit `.env.example` — it is the authoritative template.
 
 ```
-PORT=3000           # 1–65535
+PORT=3000           # 1-65535
 NODE_ENV=development | test | production
 LOG_LEVEL=info      # fatal | error | warn | info | debug | trace | silent
 CORS_ORIGIN=*       # restrict to e.g. http://192.168.1.50:3000 in production
 ```
 
-Config is validated at startup via Zod (`src/config/index.js`). Bad env vars cause an immediate `process.exit(1)` with a clear field-level error message — this is intentional.
+Config is validated at startup via Zod (`src/config/index.js`). Bad env vars cause an immediate `process.exit(1)` with a clear field-level error — intentional.
 
 ## Architecture
 
 ```
 src/
-  config/index.js       — Zod env validation; exports envSchema (testable) + config object
-  lib/logger.js         — Pino logger (pino-pretty in dev only)
+  config/index.js         -- Zod env validation; exports envSchema (testable) + config object
+  lib/
+    logger.js             -- Pino logger (pino-pretty in dev only)
+    messageLog.js         -- appendMessage() + readRecentMessages(); writes data/messages.jsonl
+    audioAlert.js         -- playAlert(type, subtype?); wraps play-sound; never throws
   middleware/
-    errorHandler.js     — Express 4-arg error handler (err, req, res, _next)
+    errorHandler.js       -- Express 4-arg error handler (err, req, res, _next)
+    adminGuard.js         -- Allows only localhost IPs; returns 403 otherwise
   routes/
-    health.js           — GET /api/health — no-store cache header
+    health.js             -- GET /api/health -- no-store cache header
+    admin.js              -- GET /admin (serves admin.html) + GET /admin/history (last 100 msgs)
   handlers/
-    socket.js           — All Socket.IO event logic + per-socket rate limiters
-  server.js             — Bootstrap only: wires middleware, routes, socket handlers, graceful shutdown
+    socket.js             -- All Socket.IO event logic + per-socket rate limiters
+  server.js               -- Bootstrap only: wires middleware, routes, socket handlers, graceful shutdown
 
 public/
-  index.html            — Single-page UI (vanilla HTML/CSS)
-  client.js             — Browser Socket.IO client
+  index.html              -- Son's single-page UI (vanilla HTML/CSS, mobile-first)
+  client.js               -- Son's Socket.IO browser client
+  admin.html              -- Dad's admin panel HTML/CSS
+  admin.js                -- Dad's admin panel browser client (ES module)
+  matrix.js               -- Matrix rain animation (cosmetic only)
+
+data/
+  messages.jsonl          -- Append-only persistent message log (auto-created; not in git)
+
+assets/
+  buzz_chat_1.mp3         -- Audio alert files (6 total: buzz_chat_1 through buzz_chat_6)
+  buzz_chat_2.mp3
+  buzz_chat_3.mp3
+  buzz_chat_4.mp3
+  buzz_chat_5.mp3
+  buzz_chat_6.mp3
 
 tests/
-  setup.js              — Sets NODE_ENV=test, LOG_LEVEL=silent before each file
-  unit/                 — Pure unit tests (mock I/O)
-  integration/          — Real TCP server on port :0; real socket.io-client
+  setup.js                -- Sets NODE_ENV=test, LOG_LEVEL=silent before each file
+  unit/                   -- Pure unit tests (mock I/O)
+    socket.handlers.test.js
+    messageLog.test.js
+    audioAlert.test.js
+    adminGuard.test.js
+    admin.route.test.js
+    config.test.js
+    errorHandler.test.js
+    health.route.test.js
+  integration/            -- Real TCP server on port :0; real socket.io-client
+    http.test.js
+    socket.test.js
 
 scripts/
-  preflight.js          — Node built-ins only; safe to run before npm install
+  preflight.js            -- Node built-ins only; safe to run before npm install
 ```
 
 ## Key Conventions
 
-**ES Modules throughout** — `"type": "module"` in package.json. Use `import/export`, not `require`. Use `fileURLToPath(import.meta.url)` for `__dirname` equivalents.
+**ES Modules throughout** -- `"type": "module"` in package.json. Use `import/export`, not `require`. Use `fileURLToPath(import.meta.url)` for `__dirname` equivalents.
 
-**Zod validation order matters** — always `.trim().min(1).max(n)`, never `.min(1).max(n).trim()`. Trim is a transform; it runs after validators, so `.min(1)` before `.trim()` lets `'   '` (spaces) pass.
+**Zod validation order matters** -- always `.trim().min(1).max(n)`, never `.min(1).max(n).trim()`. Trim is a transform that runs after validators; putting `.min(1)` before `.trim()` lets `'   '` (spaces-only) pass the length check.
 
-**Express error handler signature** — must be exactly `(err, req, res, _next)`. Swapping parameter names (e.g. `_res, next`) causes `TypeError: res.status is not a function` at runtime because `next` is not the response object.
+**Express error handler signature** -- must be exactly `(err, req, res, _next)`. Swapping names (e.g. `_res, next`) causes `TypeError: res.status is not a function` at runtime.
 
-**Logging** — never log raw user-supplied data. Log `typeof data` or field names only. Prevents log injection and avoids writing large payloads to the log stream.
+**Logging** -- never log raw user-supplied data. Log `typeof data` or field names only. Prevents log injection and avoids writing large payloads to the log stream.
 
-**Per-socket rate limiting** — `makeRateLimiter()` in `socket.js` creates Map-based sliding-window limiters. Entries are removed on `disconnect` to prevent unbounded memory growth with connection churn. Current limits: 5 buzzes/10 s, 20 messages/5 s.
+**audioAlert is fire-and-forget** -- `playAlert()` is synchronous from the caller's perspective; errors are caught internally and logged. Never await it or expect it to throw.
 
-**Graceful shutdown** — `io.disconnectSockets(true)` must be called *before* `httpServer.close()`. Without it, active WebSocket connections keep the server alive indefinitely on SIGTERM.
+**messageLog is async but fire-and-forget in socket handlers** -- `appendMessage()` returns a Promise but socket handlers do not await it. Persistence failures are logged but never surface as errors to the client. This is intentional — a log failure must not crash the server or reject a client message.
+
+**Per-socket rate limiting** -- `makeRateLimiter()` in `socket.js` creates Map-based sliding-window counters. Entries are removed on `disconnect` to prevent unbounded memory growth. Limits:
+
+| Event | Window | Max |
+|-------|--------|-----|
+| buzz-dad | 10 s | 5 |
+| send-message | 5 s | 20 |
+| quick-need | 10 s | 10 |
+| set-status | 10 s | 5 |
+| location-ping | 30 s | 3 |
+| battery-low | 60 s | 2 |
+| countdown-start | 10 s | 5 |
+| send-reply | 5 s | 20 |
+
+**Graceful shutdown** -- `broadcastShutdown(io)` fires first, then a 300 ms delay, then `io.disconnectSockets(true)`, then `httpServer.close()`. Order is critical: emitting after sockets are closed means the packet never reaches clients.
+
+**Admin auth -- two layers:**
+1. HTTP: `adminGuard` middleware checks `req.ip` and returns 403 for non-localhost
+2. Socket.IO: `io.use()` middleware sets `socket.data.isAdmin` based on `socket.handshake.address`. The `send-reply` and `admin-mark-read` handlers check this flag and emit `ack error` if false.
 
 ## Socket Events
 
-| Direction       | Event          | Payload                              |
-|-----------------|----------------|--------------------------------------|
-| client → server | `buzz-dad`     | *(none)*                             |
-| client → server | `send-message`    | `{ text: string }` (1–500 chars, trimmed) |
-| server → client | `ack`             | `{ type: 'buzz' | 'message' | 'error', message: string }` |
-| server → client | `server-shutdown` | `{ message: string }` — emitted before `io.disconnectSockets()` during graceful shutdown |
+### Client to server (son's phone)
 
-`send-message` also accepts an optional acknowledgement callback `(response: { ok: boolean, error?: string }) => void`.
+| Event | Payload | Rate limit | Notes |
+|-------|---------|------------|-------|
+| `buzz-dad` | *(none)* | 5/10s | Plays buzz_chat_1.mp3 |
+| `send-message` | `{ text: string }` 1-500 chars | 20/5s | Plays buzz_chat_1.mp3 |
+| `quick-need` | `{ need: 'Pickup'|'Food'|'Money'|'Call Me'|'Help' }` | 10/10s | Per-need MP3 mapping |
+| `set-status` | `{ emoji: string, label: string }` | 5/10s | Plays buzz_chat_6.mp3 |
+| `location-ping` | `{ lat: number, lng: number, accuracy: number }` | 3/30s | Plays buzz_chat_3.mp3 |
+| `battery-low` | `{ level: number|null }` 0-1 | 2/60s | Plays buzz_chat_5.mp3 |
+| `countdown-start` | `{ minutes: 5|10|15|30 }` | 5/10s | Plays buzz_chat_6.mp3 |
+
+### Client to server (admin panel -- localhost only)
+
+| Event | Payload | Notes |
+|-------|---------|-------|
+| `send-reply` | `{ text: string }` 1-500 chars | Requires `socket.data.isAdmin`; no audio |
+| `admin-mark-read` | *(none)* | Requires `socket.data.isAdmin`; broadcasts `messages-read` to all clients |
+
+### Server to all clients
+
+| Event | Payload | When |
+|-------|---------|------|
+| `incoming-message` | `{ id, ts, direction, type, payload }` | Any inbound event or reply |
+| `messages-read` | `{ ts }` | Admin marks messages read |
+| `server-shutdown` | `{ message }` | Before graceful shutdown |
+
+### Server to sender only
+
+| Event | Payload | When |
+|-------|---------|------|
+| `ack` | `{ type, message }` | After every handled event |
+
+All socket events that accept data also accept an optional acknowledgement callback `(response: { ok: boolean, error?: string }) => void`.
 
 ## HTTP Endpoints
 
-- `GET /api/health` — `{ status, uptime, timestamp }` — `Cache-Control: no-store`
-- `GET /` — serves `public/index.html`
-- All HTTP routes: 100 req/15 min rate limit, 10 KB JSON body limit
+| Method | Path | Auth | Response |
+|--------|------|------|----------|
+| GET | `/` | none | `public/index.html` |
+| GET | `/api/health` | none | `{ status, uptime, timestamp }` |
+| GET | `/admin` | localhost only | `public/admin.html` |
+| GET | `/admin/history` | localhost only | `{ messages: object[] }` (last 100) |
+
+All HTTP routes: 100 req/15 min rate limit, 10 KB JSON body limit.
+
+## Message Log Format
+
+Each record in `data/messages.jsonl` is a JSON object on one line:
+
+```json
+{
+  "id": "uuid-v4",
+  "ts": "ISO-8601",
+  "direction": "in" | "out",
+  "type": "buzz" | "message" | "quick-need" | "status" | "location" | "battery-low" | "countdown" | "reply",
+  "socketId": "socket.io-socket-id",
+  "payload": {}
+}
+```
+
+`readRecentMessages(limit)` returns the last `limit` lines, oldest-first, skipping malformed lines. Returns `[]` on any error (including ENOENT).
 
 ## Testing Approach
 
 - **Unit tests** use `vi.mock` + `vi.resetModules()` + dynamic imports for full isolation (especially config — avoids `process.exit` side effects).
-- **Integration tests** bind to port `:0` (OS-assigned) to avoid port conflicts in CI. Each test gets a fresh server instance via `beforeEach`/`afterEach`.
-- `vitest.config.js` sets `testTimeout: 10_000` — sufficient for real TCP socket setup without being slow in CI.
-- `src/server.js` is excluded from coverage thresholds (bootstrap entry point; covered by integration tests but not isolatable).
+- **Integration tests** bind to port `:0` (OS-assigned) to avoid port conflicts in CI. Each test gets a fresh server via `beforeEach`/`afterEach`.
+- `vitest.config.js` sets `testTimeout: 10_000` — enough for real TCP socket setup without being slow.
+- `src/server.js` is excluded from coverage thresholds (bootstrap; covered by integration tests but not isolatable).
+- New modules (`messageLog`, `audioAlert`, `adminGuard`, `admin.route`) each have dedicated unit test files.
 
 ## Security Notes
 
-- CSP is disabled via `helmet({ contentSecurityPolicy: false })` — tighten for production deployments.
-- `app.set('trust proxy', 1)` is commented out in `server.js` — uncomment when running behind nginx/Caddy so rate limiting uses the real client IP.
-- `CORS_ORIGIN=*` is acceptable for local-network use only. Set a specific origin for any internet-facing deployment.
-- CSS class injection in `client.js` is prevented by validating `type` against a `VALID_LOG_TYPES` Set before applying it as a class name.
+- CSP is disabled via `helmet({ contentSecurityPolicy: false })` — tighten for production.
+- `app.set('trust proxy', 1)` is commented out — uncomment when behind nginx/Caddy so rate limiting uses the real client IP.
+- `CORS_ORIGIN=*` is acceptable for local-network use only.
+- `textContent` is used exclusively for rendering user data in both `client.js` and `admin.js` — no `innerHTML` on untrusted data.
+- CSS class injection is prevented in `client.js` by validating `type` against a `VALID_LOG_TYPES` Set before applying as a class name.
+- Admin access uses two independent checks (HTTP middleware + Socket.IO middleware) so neither can be bypassed independently.
+- `data/messages.jsonl` is in `.gitignore` — never committed.
