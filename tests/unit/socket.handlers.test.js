@@ -688,6 +688,33 @@ describe('registerSocketHandlers', () => {
         expect.objectContaining({ type: 'countdown' }),
       );
     });
+
+    it('emits ack type "countdown" for { minutes: 10 }', () => {
+      const { socket } = setup();
+      socket.receive('countdown-start', { minutes: 10 });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'countdown' }));
+    });
+
+    it('emits ack type "countdown" for { minutes: 15 }', () => {
+      const { socket } = setup();
+      socket.receive('countdown-start', { minutes: 15 });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'countdown' }));
+    });
+
+    it('callback receives { ok: true } for valid minutes', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('countdown-start', { minutes: 10 }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('ack message includes the minutes value', () => {
+      const { socket } = setup();
+      socket.receive('countdown-start', { minutes: 15 });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Countdown started: 15 min.');
+    });
   });
 
   // ── send-reply ────────────────────────────────────────────────────────────
@@ -949,12 +976,50 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'status' }));
     });
 
-    it('6th set-status within 10s returns error ack', () => {
+    it('6th set-status within 10s returns exact rate-limit error message', () => {
       const { socket } = setup();
       for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
       vi.clearAllMocks();
       socket.receive('set-status', { emoji: '😴', label: 'Tired' });
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many status updates.',
+      });
+    });
+
+    it('does NOT call playAlert when set-status is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when set-status is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when set-status is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with set-status rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'set-status rate limit exceeded',
+      );
     });
   });
 
@@ -969,12 +1034,50 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'location' }));
     });
 
-    it('4th location-ping within 30s returns error ack', () => {
+    it('4th location-ping within 30s returns exact rate-limit error message', () => {
       const { socket } = setup();
       for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
       vi.clearAllMocks();
       socket.receive('location-ping', validLocation);
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many location pings.',
+      });
+    });
+
+    it('does NOT call playAlert when location-ping is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when location-ping is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when location-ping is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with location-ping rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'location-ping rate limit exceeded',
+      );
     });
   });
 
@@ -987,12 +1090,50 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'battery-low' }));
     });
 
-    it('3rd battery-low within 60s returns error ack', () => {
+    it('3rd battery-low within 60s returns exact rate-limit error message', () => {
       const { socket } = setup();
       for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
       vi.clearAllMocks();
       socket.receive('battery-low', { level: 0.1 });
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many battery alerts.',
+      });
+    });
+
+    it('does NOT call playAlert when battery-low is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when battery-low is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when battery-low is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with battery-low rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'battery-low rate limit exceeded',
+      );
     });
   });
 
@@ -1005,12 +1146,50 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'countdown' }));
     });
 
-    it('6th countdown-start within 10s returns error ack', () => {
+    it('6th countdown-start within 10s returns exact rate-limit error message', () => {
       const { socket } = setup();
       for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
       vi.clearAllMocks();
       socket.receive('countdown-start', { minutes: 5 });
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many countdowns.',
+      });
+    });
+
+    it('does NOT call playAlert when countdown-start is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when countdown-start is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when countdown-start is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with countdown-start rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'countdown-start rate limit exceeded',
+      );
     });
   });
 
@@ -1023,12 +1202,42 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'reply' }));
     });
 
-    it('21st send-reply within 5s returns error ack', () => {
+    it('21st send-reply within 5s returns exact rate-limit error message', () => {
       const { socket } = setup({ isAdmin: true });
       for (let i = 0; i < 20; i++) socket.receive('send-reply', { text: 'hi' });
       vi.clearAllMocks();
       socket.receive('send-reply', { text: 'hi' });
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many replies.',
+      });
+    });
+
+    it('does NOT call appendMessage when send-reply is rate limited', () => {
+      const { socket } = setup({ isAdmin: true });
+      for (let i = 0; i < 20; i++) socket.receive('send-reply', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-reply', { text: 'hi' });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when send-reply is rate limited', () => {
+      const { socket, io } = setup({ isAdmin: true });
+      for (let i = 0; i < 20; i++) socket.receive('send-reply', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-reply', { text: 'hi' });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with send-reply rate-limit exceeded message', () => {
+      const { socket } = setup({ isAdmin: true });
+      for (let i = 0; i < 20; i++) socket.receive('send-reply', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-reply', { text: 'hi' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'send-reply rate limit exceeded',
+      );
     });
   });
 

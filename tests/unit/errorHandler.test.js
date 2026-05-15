@@ -103,6 +103,30 @@ describe('errorHandler middleware', () => {
     expect(callOrder).toEqual(['status', 'json']);
   });
 
+  // ── Valid status boundary values ──────────────────────────────────────────
+
+  it('accepts err.status=400 (minimum valid 4xx boundary)', () => {
+    errorHandler(Object.assign(new Error('Bad Request'), { status: 400 }), req, res, next);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('accepts err.status=599 (maximum valid 5xx boundary)', () => {
+    errorHandler(Object.assign(new Error('Server Error'), { status: 599 }), req, res, next);
+    expect(res.status).toHaveBeenCalledWith(599);
+  });
+
+  it('falls back to 500 for err.status=399 (just below 4xx range)', () => {
+    // 399 < 400 → out of valid range
+    errorHandler({ status: 399, message: 'x' }, req, res, next);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('falls back to 500 for err.status=600 (just above 5xx range)', () => {
+    // 600 > 599 → out of valid range
+    errorHandler({ status: 600, message: 'x' }, req, res, next);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   // ── Bogus err.status values ───────────────────────────────────────────────
   // Source: Number.isInteger(raw) && raw >= 400 && raw <= 599
 

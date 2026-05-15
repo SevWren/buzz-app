@@ -34,6 +34,21 @@ describe('appendMessage', () => {
     expect(mkdirOrder).toBeLessThan(appendOrder);
   });
 
+  it('calls mkdir with a path whose terminal segment is "data"', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
+    const [dirPath] = mkdir.mock.calls[0];
+    // Verify the path ends with /data (or \data on Windows) — not just any path containing 'data'
+    expect(dirPath).toMatch(/[/\\]data$/);
+  });
+
+  it('calls appendFile with a path ending in "messages.jsonl"', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
+    const [filePath] = appendFile.mock.calls[0];
+    expect(filePath).toMatch(/messages\.jsonl$/);
+  });
+
   it('calls appendFile with a string ending in \\n', async () => {
     const { appendMessage } = await getModule();
     await appendMessage({ direction: 'in', type: 'message', socketId: 'x', payload: { text: 'hi' } });

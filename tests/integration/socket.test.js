@@ -216,11 +216,13 @@ describe('Socket.IO integration', () => {
       expect(ack.type).toBe('error');
     });
 
-    it('callback is called with { ok: false } on validation failure', async () => {
+    it('callback is called with { ok: false, error: string } on validation failure', async () => {
       const result = await new Promise((resolve) => {
         client.emit('send-message', { text: '' }, resolve);
       });
       expect(result.ok).toBe(false);
+      expect(typeof result.error).toBe('string');
+      expect(result.error.length).toBeGreaterThan(0);
     });
   });
 
@@ -265,11 +267,13 @@ describe('Socket.IO integration', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('callback returns { ok: false } for invalid need', async () => {
+    it('callback returns { ok: false, error: string } for invalid need', async () => {
       const result = await new Promise((resolve) => {
         client.emit('quick-need', { need: 'Dinner' }, resolve);
       });
       expect(result.ok).toBe(false);
+      expect(typeof result.error).toBe('string');
+      expect(result.error.length).toBeGreaterThan(0);
     });
 
     it('server broadcasts incoming-message to all connected clients', async () => {
@@ -365,11 +369,48 @@ describe('Socket.IO integration', () => {
       expect(ack.type).toBe('countdown');
     });
 
+    it('server responds with ack type "countdown" for minutes 5', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('countdown-start', { minutes: 5 });
+      const ack = await ackPromise;
+      expect(ack.type).toBe('countdown');
+    });
+
+    it('server responds with ack type "countdown" for minutes 15', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('countdown-start', { minutes: 15 });
+      const ack = await ackPromise;
+      expect(ack.type).toBe('countdown');
+    });
+
+    it('server responds with ack type "countdown" for minutes 30', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('countdown-start', { minutes: 30 });
+      const ack = await ackPromise;
+      expect(ack.type).toBe('countdown');
+    });
+
     it('server rejects minutes 8 (not a valid preset)', async () => {
       const ackPromise = nextAck(client);
       client.emit('countdown-start', { minutes: 8 });
       const ack = await ackPromise;
       expect(ack.type).toBe('error');
+    });
+
+    it('callback returns { ok: true } for valid minutes', async () => {
+      const result = await new Promise((resolve) => {
+        client.emit('countdown-start', { minutes: 15 }, resolve);
+      });
+      expect(result).toStrictEqual({ ok: true });
+    });
+
+    it('callback returns { ok: false, error } for invalid minutes', async () => {
+      const result = await new Promise((resolve) => {
+        client.emit('countdown-start', { minutes: 8 }, resolve);
+      });
+      expect(result.ok).toBe(false);
+      expect(typeof result.error).toBe('string');
+      expect(result.error.length).toBeGreaterThan(0);
     });
   });
 
@@ -418,12 +459,13 @@ describe('Socket.IO integration', () => {
       }
     });
 
-    it('messages-read payload has ts field (ISO string)', async () => {
+    it('messages-read payload ts is a valid ISO 8601 string', async () => {
       const readPromise = new Promise((resolve) => client.once('messages-read', resolve));
       client.emit('admin-mark-read');
       const payload = await readPromise;
-      expect(payload.ts).toBeDefined();
-      expect(() => new Date(payload.ts).toISOString()).not.toThrow();
+      expect(typeof payload.ts).toBe('string');
+      // Round-trip through Date must be lossless — confirms it is proper ISO 8601
+      expect(new Date(payload.ts).toISOString()).toBe(payload.ts);
     });
   });
 
