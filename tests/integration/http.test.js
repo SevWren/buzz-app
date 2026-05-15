@@ -96,9 +96,9 @@ describe('HTTP integration', () => {
       expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
     });
 
-    it('sets X-DNS-Prefetch-Control', async () => {
+    it('sets X-DNS-Prefetch-Control: off (helmet default)', async () => {
       const res = await request(app).get('/api/health');
-      expect(res.headers['x-dns-prefetch-control']).toBeDefined();
+      expect(res.headers['x-dns-prefetch-control']).toBe('off');
     });
 
     it('does not expose X-Powered-By', async () => {

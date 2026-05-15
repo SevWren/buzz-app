@@ -71,12 +71,12 @@ describe('errorHandler middleware', () => {
 
   // ── Logging ───────────────────────────────────────────────────────────────
 
-  it('calls logger.error with the error and request path', () => {
+  it('calls logger.error with the error, request path, and exact message', () => {
     const err = new Error('oops');
     errorHandler(err, req, res, next);
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ err, path: '/test' }),
-      expect.any(String)
+      'Unhandled request error',
     );
   });
 
@@ -149,6 +149,8 @@ describe('errorHandler middleware', () => {
   it('handles string error without throwing (string.status is undefined → 500)', () => {
     errorHandler('oops', req, res, next);
     expect(res.status).toHaveBeenCalledWith(500);
+    // string.message is undefined → falls back to 'Internal Server Error'
+    expect(res.json).toHaveBeenCalledWith({ error: { message: 'Internal Server Error' } });
   });
 
   // ── Production 5xx message masking ────────────────────────────────────────

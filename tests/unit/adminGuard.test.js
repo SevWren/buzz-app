@@ -25,19 +25,26 @@ describe('adminGuard middleware', () => {
   it('calls next() for req.ip "127.0.0.1"', () => {
     const next = vi.fn();
     adminGuard(makeReq('127.0.0.1'), makeRes(), next);
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(); // no-arg: not next(err)
   });
 
   it('calls next() for req.ip "::1"', () => {
     const next = vi.fn();
     adminGuard(makeReq('::1'), makeRes(), next);
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
   });
 
   it('calls next() for req.ip "::ffff:127.0.0.1" (IPv4-mapped loopback)', () => {
     const next = vi.fn();
     adminGuard(makeReq('::ffff:127.0.0.1'), makeRes(), next);
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('calls next() for req.ip "localhost" (third allowed value in source)', () => {
+    // Source: normalized === 'localhost' is an explicit check
+    const next = vi.fn();
+    adminGuard(makeReq('localhost'), makeRes(), next);
+    expect(next).toHaveBeenCalledWith();
   });
 
   it('returns 403 for req.ip "192.168.1.50"', () => {
@@ -78,7 +85,7 @@ describe('adminGuard middleware', () => {
     const next = vi.fn();
     const req  = { ip: undefined, socket: { remoteAddress: '127.0.0.1' } };
     adminGuard(req, makeRes(), next);
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
   });
 
   it('returns 403 for empty string IP (treats as non-local)', () => {

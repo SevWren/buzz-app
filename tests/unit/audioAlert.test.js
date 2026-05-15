@@ -124,9 +124,14 @@ describe('playAlert', () => {
     // Simulate play-sound calling back with an error
     mockPlay.mockImplementationOnce((_path, cb) => cb(new Error('no player')));
     expect(() => playAlert('buzz')).not.toThrow();
+    // Source: logger.warn({ err, type, file }, 'audioAlert: playback failed — ...')
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      expect.any(String),
+      expect.objectContaining({
+        err:  expect.any(Error),
+        type: 'buzz',
+        file: 'buzz_chat_1.mp3',
+      }),
+      'audioAlert: playback failed — install afplay (macOS), aplay/mpg123 (Linux), or mplayer (Windows)',
     );
   });
 

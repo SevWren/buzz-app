@@ -6,7 +6,7 @@
  * or opening a real network connection.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { registerSocketHandlers } from '../../src/handlers/socket.js';
+import { registerSocketHandlers, broadcastShutdown } from '../../src/handlers/socket.js';
 import { logger } from '../../src/lib/logger.js';
 import { appendMessage } from '../../src/lib/messageLog.js';
 import { playAlert }     from '../../src/lib/audioAlert.js';
@@ -118,12 +118,11 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
     });
 
-    it('includes a non-empty message in the ack', () => {
+    it('ack message is exactly "Buzz received — Dad has been alerted!"', () => {
       const { socket } = setup();
       socket.receive('buzz-dad');
       const [, payload] = socket.emit.mock.calls[0];
-      expect(typeof payload.message).toBe('string');
-      expect(payload.message.length).toBeGreaterThan(0);
+      expect(payload.message).toBe('Buzz received — Dad has been alerted!');
     });
 
     it('logs the buzz event', () => {
@@ -285,6 +284,14 @@ describe('registerSocketHandlers', () => {
       const { socket } = setup();
       socket.receive('send-message', { text: '' });
       expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('rejects whitespace-only text (trim then min(1) fails)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('send-message', { text: '   ' }, cb);
+      expectErrorAck(socket);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
   });
 
@@ -611,6 +618,34 @@ describe('registerSocketHandlers', () => {
       socket.receive('battery-low', { level: -0.001 }, cb);
       expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
+
+    it('ack message shows percentage for numeric level (level=0.5 → "50%")', () => {
+      const { socket } = setup();
+      socket.receive('battery-low', { level: 0.5 });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Battery alert sent (50%).');
+    });
+
+    it('ack message shows "unknown" for null level', () => {
+      const { socket } = setup();
+      socket.receive('battery-low', { level: null });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Battery alert sent (unknown).');
+    });
+
+    it('ack message shows "100%" for level=1', () => {
+      const { socket } = setup();
+      socket.receive('battery-low', { level: 1 });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Battery alert sent (100%).');
+    });
+
+    it('ack message shows "0%" for level=0', () => {
+      const { socket } = setup();
+      socket.receive('battery-low', { level: 0 });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Battery alert sent (0%).');
+    });
   });
 
   // ── countdown-start ───────────────────────────────────────────────────────
@@ -739,6 +774,14 @@ describe('registerSocketHandlers', () => {
       socket.receive('send-reply', { text: 'hi' }, cb);
       expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
     });
+
+    it('rejects whitespace-only reply text (trim then min(1) fails)', () => {
+      const { socket } = setup({ isAdmin: true });
+      const cb = vi.fn();
+      socket.receive('send-reply', { text: '   ' }, cb);
+      expectErrorAck(socket);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
   });
 
   // ── admin-mark-read ───────────────────────────────────────────────────────
@@ -850,12 +893,50 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
     });
 
-    it('6th buzz within 10s returns error ack (one over limit)', () => {
+    it('6th buzz within 10s returns error ack with exact message', () => {
       const { socket } = setup();
       for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
       vi.clearAllMocks();
       socket.receive('buzz-dad');
-      expectErrorAck(socket);
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many buzzes.',
+      });
+    });
+
+    it('does NOT call playAlert when rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
+      vi.clearAllMocks();
+      socket.receive('buzz-dad');
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
+      vi.clearAllMocks();
+      socket.receive('buzz-dad');
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
+      vi.clearAllMocks();
+      socket.receive('buzz-dad');
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
+      vi.clearAllMocks();
+      socket.receive('buzz-dad');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'buzz-dad rate limit exceeded',
+      );
     });
   });
 
@@ -951,6 +1032,82 @@ describe('registerSocketHandlers', () => {
     });
   });
 
+  describe('send-message rate limit (max 20 / 5s)', () => {
+    it('20th send-message within 5s succeeds', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 19; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'message' }));
+    });
+
+    it('21st send-message within 5s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many messages.',
+      });
+    });
+
+    it('rate-limited send-message callback receives { ok: false, error: "Rate limit exceeded" }', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      const cb = vi.fn();
+      socket.receive('send-message', { text: 'hi' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Rate limit exceeded' });
+    });
+
+    it('does NOT call playAlert when send-message is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when send-message is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('quick-need rate limit (max 10 / 10s)', () => {
+    it('10th quick-need within 10s succeeds', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 9; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'quick-need' }));
+    });
+
+    it('11th quick-need within 10s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', {
+        type: 'error',
+        message: 'Slow down — too many requests.',
+      });
+    });
+
+    it('rate-limited quick-need callback receives { ok: false, error: "Rate limit exceeded" }', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      const cb = vi.fn();
+      socket.receive('quick-need', { need: 'Pickup' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Rate limit exceeded' });
+    });
+  });
+
   describe('rate-limiter cross-socket isolation', () => {
     it('hitting limit on one socket does not affect a different socket', () => {
       const { socket: socket1 } = setup();
@@ -992,6 +1149,33 @@ describe('registerSocketHandlers', () => {
         ([event, payload]) => event === 'ack' && payload?.type === 'error',
       );
       expect(errorAcks).toHaveLength(0);
+    });
+  });
+
+  // ── broadcastShutdown ─────────────────────────────────────────────────────
+
+  describe('broadcastShutdown', () => {
+    it('emits "server-shutdown" on io with correct message', () => {
+      const io = { emit: vi.fn(), on: vi.fn(), use: vi.fn() };
+      broadcastShutdown(io);
+      expect(io.emit).toHaveBeenCalledWith('server-shutdown', {
+        message: 'Server is shutting down. Connection will be lost.',
+      });
+    });
+
+    it('calls io.emit exactly once', () => {
+      const io = { emit: vi.fn(), on: vi.fn(), use: vi.fn() };
+      broadcastShutdown(io);
+      expect(io.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses io.emit (broadcasts to all clients), not socket.emit', () => {
+      const io = { emit: vi.fn(), on: vi.fn(), use: vi.fn() };
+      const socketEmit = vi.fn();
+      broadcastShutdown(io);
+      // Verify it called io.emit (the global broadcast), not socket.emit
+      expect(io.emit).toHaveBeenCalled();
+      expect(socketEmit).not.toHaveBeenCalled();
     });
   });
 

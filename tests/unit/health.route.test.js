@@ -87,9 +87,10 @@ describe('GET /api/health', () => {
   // ── uptime precision ──────────────────────────────────────────────────────
   // Source: Math.floor(process.uptime()) — always a finite, non-negative integer
 
-  it('body.uptime is a finite non-negative number', async () => {
+  it('body.uptime is a finite non-negative integer (Math.floor guarantees integer)', async () => {
     const res = await request(app).get('/api/health');
     expect(Number.isFinite(res.body.uptime)).toBe(true);
+    expect(Number.isInteger(res.body.uptime)).toBe(true);
     expect(res.body.uptime).toBeGreaterThanOrEqual(0);
   });
 });

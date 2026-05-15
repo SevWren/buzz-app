@@ -109,11 +109,12 @@ describe('Socket.IO integration', () => {
   // ── buzz-dad ──────────────────────────────────────────────────────────────
 
   describe('buzz-dad event', () => {
-    it('server responds with an ack', async () => {
+    it('ack has type "buzz" and exact success message', async () => {
       const ackPromise = nextAck(client);
       client.emit('buzz-dad');
       const ack = await ackPromise;
-      expect(ack).toBeDefined();
+      expect(ack.type).toBe('buzz');
+      expect(ack.message).toBe('Buzz received — Dad has been alerted!');
     });
 
     it('ack has type "buzz"', async () => {
@@ -143,11 +144,12 @@ describe('Socket.IO integration', () => {
   // ── send-message ──────────────────────────────────────────────────────────
 
   describe('send-message event — valid input', () => {
-    it('server responds with an ack', async () => {
+    it('ack has type "message" and echoes text in message field', async () => {
       const ackPromise = nextAck(client);
       client.emit('send-message', { text: 'Hello, server!' });
       const ack = await ackPromise;
-      expect(ack).toBeDefined();
+      expect(ack.type).toBe('message');
+      expect(ack.message).toContain('Hello, server!');
     });
 
     it('ack has type "message"', async () => {
@@ -337,6 +339,20 @@ describe('Socket.IO integration', () => {
       const ack = await ackPromise;
       expect(ack.type).toBe('battery-low');
     });
+
+    it('ack message shows "unknown" when level is null', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('battery-low', { level: null });
+      const ack = await ackPromise;
+      expect(ack.message).toBe('Battery alert sent (unknown).');
+    });
+
+    it('ack message shows percentage for numeric level (0.5 → "50%")', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('battery-low', { level: 0.5 });
+      const ack = await ackPromise;
+      expect(ack.message).toBe('Battery alert sent (50%).');
+    });
   });
 
   // ── countdown-start ───────────────────────────────────────────────────────
@@ -387,14 +403,16 @@ describe('Socket.IO integration', () => {
   // ── admin-mark-read ───────────────────────────────────────────────────────
 
   describe('admin-mark-read event', () => {
-    it('server emits messages-read to all connected clients', async () => {
+    it('server emits messages-read with valid ISO ts to all connected clients', async () => {
       const client2 = Client(`http://localhost:${port}`, { forceNew: true, transports: ['websocket'] });
       try {
         await waitForConnect(client2);
         const readOnClient2 = new Promise((resolve) => client2.once('messages-read', resolve));
         client.emit('admin-mark-read');
         const payload = await readOnClient2;
-        expect(payload).toBeDefined();
+        expect(typeof payload.ts).toBe('string');
+        expect(() => new Date(payload.ts).toISOString()).not.toThrow();
+        expect(new Date(payload.ts).toISOString()).toBe(payload.ts);
       } finally {
         client2.disconnect();
       }
