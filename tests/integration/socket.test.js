@@ -307,6 +307,13 @@ describe('Socket.IO integration', () => {
       const ack = await ackPromise;
       expect(ack.type).toBe('error');
     });
+
+    it('callback returns { ok: true } for valid set-status', async () => {
+      const result = await new Promise((resolve) => {
+        client.emit('set-status', { emoji: '😴', label: 'Tired' }, resolve);
+      });
+      expect(result).toStrictEqual({ ok: true });
+    });
   });
 
   // ── location-ping ─────────────────────────────────────────────────────────
@@ -324,6 +331,20 @@ describe('Socket.IO integration', () => {
       client.emit('location-ping', { lat: 91, lng: 0, accuracy: 5 });
       const ack = await ackPromise;
       expect(ack.type).toBe('error');
+    });
+
+    it('callback returns { ok: true } for valid coords', async () => {
+      const result = await new Promise((resolve) => {
+        client.emit('location-ping', { lat: 51.5, lng: -0.12, accuracy: 10 }, resolve);
+      });
+      expect(result).toStrictEqual({ ok: true });
+    });
+
+    it('ack message is "Location sent to Dad."', async () => {
+      const ackPromise = nextAck(client);
+      client.emit('location-ping', { lat: 51.5, lng: -0.12, accuracy: 10 });
+      const ack = await ackPromise;
+      expect(ack.message).toBe('Location sent to Dad.');
     });
   });
 
@@ -356,6 +377,13 @@ describe('Socket.IO integration', () => {
       client.emit('battery-low', { level: 0.5 });
       const ack = await ackPromise;
       expect(ack.message).toBe('Battery alert sent (50%).');
+    });
+
+    it('callback returns { ok: true } for valid battery level', async () => {
+      const result = await new Promise((resolve) => {
+        client.emit('battery-low', { level: 0.2 }, resolve);
+      });
+      expect(result).toStrictEqual({ ok: true });
     });
   });
 

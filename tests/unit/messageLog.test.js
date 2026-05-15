@@ -160,6 +160,14 @@ describe('readRecentMessages', () => {
     return import('../../src/lib/messageLog.js');
   }
 
+  it('calls readFile with the correct messages.jsonl path', async () => {
+    readFile.mockResolvedValueOnce('');
+    const { readRecentMessages } = await getModule();
+    await readRecentMessages();
+    const [filePath] = readFile.mock.calls[0];
+    expect(filePath).toMatch(/messages\.jsonl$/);
+  });
+
   it('returns [] when readFile throws ENOENT', async () => {
     const err = Object.assign(new Error('no file'), { code: 'ENOENT' });
     readFile.mockRejectedValueOnce(err);

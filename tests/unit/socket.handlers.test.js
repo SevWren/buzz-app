@@ -100,11 +100,11 @@ describe('registerSocketHandlers', () => {
       expect(socket.on).toHaveBeenCalledWith('error',           expect.any(Function));
     });
 
-    it('logs the connection with the socket id', () => {
+    it('logs the connection with the socket id and exact message', () => {
       const { socket } = setup();
       expect(logger.info).toHaveBeenCalledWith(
         expect.objectContaining({ socketId: socket.id }),
-        expect.any(String),
+        'Client connected',
       );
     });
   });
@@ -140,12 +140,12 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).toHaveBeenCalledWith('buzz');
     });
 
-    it('calls appendMessage with direction "in", type "buzz"', () => {
+    it('calls appendMessage with direction "in", type "buzz", socketId, and empty payload', () => {
       const { socket } = setup();
       socket.receive('buzz-dad');
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ direction: 'in', type: 'buzz' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'in', type: 'buzz', socketId: socket.id, payload: {},
+      });
     });
 
     it('calls io.emit("incoming-message") with type "buzz"', () => {
@@ -413,12 +413,28 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).toHaveBeenCalledWith('status');
     });
 
-    it('calls appendMessage with type "status"', () => {
+    it('calls appendMessage with full record including socketId and payload { emoji, label }', () => {
       const { socket } = setup();
       socket.receive('set-status', { emoji: '🏠', label: 'Heading Home' });
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'status' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'in', type: 'status', socketId: socket.id,
+        payload: { emoji: '🏠', label: 'Heading Home' },
+      });
+    });
+
+    it('ack message includes emoji and label', () => {
+      const { socket } = setup();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Status set: 😴 Tired');
+    });
+
+    it('callback receives { ok: true } for valid set-status', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
     });
 
     it('calls io.emit("incoming-message") with type "status"', () => {
@@ -486,12 +502,41 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).toHaveBeenCalledWith('location');
     });
 
-    it('calls appendMessage with type "location"', () => {
+    it('calls appendMessage with full record including socketId and payload { lat, lng, accuracy }', () => {
       const { socket } = setup();
       socket.receive('location-ping', { lat: 51.5, lng: -0.12, accuracy: 10 });
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'location' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'in', type: 'location', socketId: socket.id,
+        payload: { lat: 51.5, lng: -0.12, accuracy: 10 },
+      });
+    });
+
+    it('ack message is exactly "Location sent to Dad."', () => {
+      const { socket } = setup();
+      socket.receive('location-ping', { lat: 51.5, lng: -0.12, accuracy: 10 });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Location sent to Dad.');
+    });
+
+    it('callback receives { ok: true } for valid coords', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 51.5, lng: -0.12, accuracy: 10 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('rejects lat=-90.001 (just under south pole)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: -90.001, lng: 0, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('rejects lng=-180.001 (just under west boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 0, lng: -180.001, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
 
     it('accepts lat=90 (north pole exact boundary)', () => {
@@ -583,12 +628,13 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).toHaveBeenCalledWith('battery-low');
     });
 
-    it('calls appendMessage with type "battery-low"', () => {
+    it('calls appendMessage with full record including socketId and payload { level }', () => {
       const { socket } = setup();
       socket.receive('battery-low', { level: 0.1 });
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'battery-low' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'in', type: 'battery-low', socketId: socket.id,
+        payload: { level: 0.1 },
+      });
     });
 
     it('accepts level=0 (empty battery, exact min boundary)', () => {
@@ -681,12 +727,13 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).toHaveBeenCalledWith('countdown');
     });
 
-    it('calls appendMessage with type "countdown"', () => {
+    it('calls appendMessage with full record including socketId and payload { minutes }', () => {
       const { socket } = setup();
       socket.receive('countdown-start', { minutes: 15 });
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'countdown' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'in', type: 'countdown', socketId: socket.id,
+        payload: { minutes: 15 },
+      });
     });
 
     it('emits ack type "countdown" for { minutes: 10 }', () => {
@@ -752,12 +799,20 @@ describe('registerSocketHandlers', () => {
       expect(playAlert).not.toHaveBeenCalled();
     });
 
-    it('calls appendMessage with direction "out", type "reply"', () => {
+    it('calls appendMessage with full record including socketId and payload { text }', () => {
       const { socket } = setup({ isAdmin: true });
       socket.receive('send-reply', { text: 'hi' });
-      expect(appendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ direction: 'out', type: 'reply' }),
-      );
+      expect(appendMessage).toHaveBeenCalledWith({
+        direction: 'out', type: 'reply', socketId: socket.id,
+        payload: { text: 'hi' },
+      });
+    });
+
+    it('ack message echoes the reply text', () => {
+      const { socket } = setup({ isAdmin: true });
+      socket.receive('send-reply', { text: 'hi' });
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Reply sent: "hi"');
     });
 
     it('calls io.emit("incoming-message") with direction "out"', () => {
@@ -826,6 +881,22 @@ describe('registerSocketHandlers', () => {
       expect(io.emit).not.toHaveBeenCalled();
     });
 
+    it('does NOT call socket.emit("ack") for unauthorized admin-mark-read (no ack event emitted)', () => {
+      // Source: admin-mark-read unauthorized path has only callback — no socket.emit('ack', ...)
+      const { socket } = setup({ isAdmin: false });
+      socket.receive('admin-mark-read');
+      // socket.emit should not have been called at all (no ack event for this path)
+      expect(socket.emit).not.toHaveBeenCalled();
+    });
+
+    it('messages-read ts is an exact ISO 8601 round-trip', () => {
+      const { socket, io } = setup({ isAdmin: true });
+      socket.receive('admin-mark-read');
+      const [, payload] = io.emit.mock.calls[0];
+      // Round-trip must be lossless — new Date(ts).toISOString() === ts
+      expect(new Date(payload.ts).toISOString()).toBe(payload.ts);
+    });
+
     it('messages-read payload ts is an ISO string', () => {
       const { socket, io } = setup({ isAdmin: true });
       socket.receive('admin-mark-read');
@@ -879,13 +950,13 @@ describe('registerSocketHandlers', () => {
   // ── disconnect ────────────────────────────────────────────────────────────
 
   describe('disconnect event', () => {
-    it('logs the disconnect with socket id and reason', () => {
+    it('logs the disconnect with socket id, reason, and exact message', () => {
       const { socket } = setup();
       vi.clearAllMocks();
       socket.receive('disconnect', 'transport close');
       expect(logger.info).toHaveBeenCalledWith(
         expect.objectContaining({ socketId: socket.id, reason: 'transport close' }),
-        expect.any(String),
+        'Client disconnected',
       );
     });
 
@@ -898,13 +969,13 @@ describe('registerSocketHandlers', () => {
   // ── error ─────────────────────────────────────────────────────────────────
 
   describe('error event', () => {
-    it('logs socket errors', () => {
+    it('logs socket errors with exact message "Socket error"', () => {
       const { socket } = setup();
       const err = new Error('socket blew up');
       socket.receive('error', err);
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ socketId: socket.id, err }),
-        expect.any(String),
+        'Socket error',
       );
     });
   });
@@ -1285,6 +1356,25 @@ describe('registerSocketHandlers', () => {
       socket.receive('send-message', { text: 'hi' });
       expect(appendMessage).not.toHaveBeenCalled();
     });
+
+    it('does NOT call io.emit when send-message is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with send-message rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 20; i++) socket.receive('send-message', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-message', { text: 'hi' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'send-message rate limit exceeded',
+      );
+    });
   });
 
   describe('quick-need rate limit (max 10 / 10s)', () => {
@@ -1296,7 +1386,7 @@ describe('registerSocketHandlers', () => {
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'quick-need' }));
     });
 
-    it('11th quick-need within 10s returns error ack', () => {
+    it('11th quick-need within 10s returns exact rate-limit error message', () => {
       const { socket } = setup();
       for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
       vi.clearAllMocks();
@@ -1314,6 +1404,41 @@ describe('registerSocketHandlers', () => {
       const cb = vi.fn();
       socket.receive('quick-need', { need: 'Pickup' }, cb);
       expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Rate limit exceeded' });
+    });
+
+    it('does NOT call playAlert when quick-need is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(playAlert).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call appendMessage when quick-need is rate limited', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(appendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call io.emit when quick-need is rate limited', () => {
+      const { socket, io } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(io.emit).not.toHaveBeenCalled();
+    });
+
+    it('calls logger.warn with quick-need rate-limit exceeded message', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 10; i++) socket.receive('quick-need', { need: 'Pickup' });
+      vi.clearAllMocks();
+      socket.receive('quick-need', { need: 'Pickup' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ socketId: socket.id }),
+        'quick-need rate limit exceeded',
+      );
     });
   });
 

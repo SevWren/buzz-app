@@ -101,6 +101,12 @@ describe('HTTP integration', () => {
       expect(res.headers['x-dns-prefetch-control']).toBe('off');
     });
 
+    it('sets Strict-Transport-Security header (helmet HSTS)', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.headers['strict-transport-security']).toBeDefined();
+      expect(res.headers['strict-transport-security']).toContain('max-age=');
+    });
+
     it('does not expose X-Powered-By', async () => {
       const res = await request(app).get('/api/health');
       expect(res.headers['x-powered-by']).toBeUndefined();
