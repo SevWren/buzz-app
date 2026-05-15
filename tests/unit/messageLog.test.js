@@ -14,10 +14,10 @@ import { appendFile, readFile, mkdir } from 'node:fs/promises';
 import { logger } from '../../src/lib/logger.js';
 
 describe('appendMessage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.resetModules();
-  });
+  // clearAllMocks resets call history; getModule() calls resetModules() before
+  // each import so the module under test always gets a fresh module instance
+  // whose internal mock references match the top-level imported spy objects.
+  beforeEach(() => vi.clearAllMocks());
 
   async function getModule() {
     vi.resetModules();

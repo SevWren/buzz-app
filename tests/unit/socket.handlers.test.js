@@ -190,10 +190,11 @@ describe('registerSocketHandlers', () => {
       expect(payload.type).toBe('message');
     });
 
-    it('calls the acknowledgement callback with { ok: true }', () => {
+    it('calls the acknowledgement callback with { ok: true } exactly once', () => {
       const { socket } = setup();
       const cb = vi.fn();
       socket.receive('send-message', { text: 'Hello' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
       expect(cb).toHaveBeenCalledWith({ ok: true });
     });
 
@@ -261,10 +262,11 @@ describe('registerSocketHandlers', () => {
       expectErrorAck(socket);
     });
 
-    it('calls the acknowledgement callback with { ok: false } on failure', () => {
+    it('calls the acknowledgement callback with { ok: false } exactly once on failure', () => {
       const { socket } = setup();
       const cb = vi.fn();
       socket.receive('send-message', { text: '' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
       expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
 
@@ -342,17 +344,19 @@ describe('registerSocketHandlers', () => {
       );
     });
 
-    it('callback receives { ok: true } on success', () => {
+    it('callback receives { ok: true } exactly once on success', () => {
       const { socket } = setup();
       const cb = vi.fn();
       socket.receive('quick-need', { need: 'Pickup' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
       expect(cb).toHaveBeenCalledWith({ ok: true });
     });
 
-    it('callback receives { ok: false } on validation failure', () => {
+    it('callback receives { ok: false } exactly once on validation failure', () => {
       const { socket } = setup();
       const cb = vi.fn();
       socket.receive('quick-need', { need: 'Dinner' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
       expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
   });
@@ -543,10 +547,11 @@ describe('registerSocketHandlers', () => {
       expectErrorAck(socket);
     });
 
-    it('callback receives { ok: false, error: "Unauthorized" } when not admin', () => {
+    it('callback receives { ok: false, error: "Unauthorized" } exactly once when not admin', () => {
       const { socket } = setup({ isAdmin: false });
       const cb = vi.fn();
       socket.receive('send-reply', { text: 'hello' }, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
       expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
     });
 
@@ -657,10 +662,20 @@ describe('registerSocketHandlers', () => {
   // ── rate-limiting ─────────────────────────────────────────────────────────
 
   describe('buzz-dad rate limit', () => {
-    it('returns error ack on 6th buzz within 10s', () => {
+    it('5th buzz within 10s succeeds (boundary: max is 5)', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 4; i++) socket.receive('buzz-dad');
+      vi.clearAllMocks();
+      // 5th call — must still succeed
+      socket.receive('buzz-dad');
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
+    });
+
+    it('6th buzz within 10s returns error ack (one over limit)', () => {
       const { socket } = setup();
       for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
       vi.clearAllMocks();
+      // 6th call — must be rejected
       socket.receive('buzz-dad');
       expectErrorAck(socket);
     });

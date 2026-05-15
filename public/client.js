@@ -153,7 +153,14 @@ btnLocation.addEventListener('click', () => {
         direction: 'in', type: 'location', payload: { lat, lng, accuracy } });
     },
     (err) => {
-      addErrorBubble(`Location error: ${err.message}`);
+      // GeolocationPositionError.message is not standardised — map the numeric
+      // code to a readable string instead so all browsers show a useful message.
+      const GEO_ERRORS = {
+        1: 'Location access denied — please allow permission and try again.',
+        2: 'Location unavailable — device could not determine position.',
+        3: 'Location request timed out — please try again.',
+      };
+      addErrorBubble(GEO_ERRORS[err.code] ?? `Location error (code ${err.code}).`);
     },
     { timeout: 10_000, maximumAge: 30_000 },
   );
