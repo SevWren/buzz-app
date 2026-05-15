@@ -40,7 +40,7 @@ export function playAlert(type, subtype) {
   if (!file) return; // 'reply' and unknown types — silent
 
   const filePath = join(ASSETS_DIR, file);
-  player.sound(filePath, (err) => {
+  player.play(filePath, (err) => {
     if (err) {
       logger.warn(
         { err, type, file },

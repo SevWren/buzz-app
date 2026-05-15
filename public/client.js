@@ -252,6 +252,10 @@ function startCountdown(minutes) {
   countdownDisplay.hidden = false;
 
   function tick() {
+    // Guard: cancel button may set countdownEndTime to null between interval ticks.
+    // Without this check, null - Date.now() = NaN, making remaining <= 0 false
+    // and the display would show "NaN:NaN remaining" indefinitely.
+    if (countdownEndTime === null) return;
     const remaining = countdownEndTime - Date.now();
     if (remaining <= 0) {
       clearInterval(countdownTimer);

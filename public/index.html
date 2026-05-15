@@ -396,6 +396,17 @@
       border-bottom-right-radius: 4px;
     }
 
+    /* System messages — connection events, centered, muted */
+    .bubble.bubble-system {
+      align-self: center;
+      background: color-mix(in oklch, var(--muted) 7%, var(--surface));
+      font-size: 0.78rem;
+      color: var(--muted);
+      border-radius: 8px;
+      max-width: 100%;
+      text-align: center;
+    }
+
     /* Error bubbles */
     .bubble.bubble-error {
       align-self: flex-start;
