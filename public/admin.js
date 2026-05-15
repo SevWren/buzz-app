@@ -36,6 +36,10 @@ socket.on('disconnect', () => {
   unreadCount = 0;
   updateUnreadBadge();
   updateTabTitle();
+  // Release DOM element references so garbage collection can reclaim them.
+  // loadHistory() clears the map on reconnect, but clearing here too prevents
+  // the map growing unbounded on a long-lived session that never reconnects.
+  readReceiptMap.clear();
 });
 
 socket.on('connect_error', () => {

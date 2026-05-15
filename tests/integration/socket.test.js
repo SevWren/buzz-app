@@ -222,6 +222,23 @@ describe('Socket.IO integration', () => {
     });
   });
 
+  describe('send-message — broadcast', () => {
+    it('send-message broadcasts incoming-message to all connected clients', async () => {
+      const client2 = Client(`http://localhost:${port}`, { forceNew: true, transports: ['websocket'] });
+      try {
+        await waitForConnect(client2);
+        const incomingOnClient2 = nextIncoming(client2);
+        client.emit('send-message', { text: 'broadcast check' });
+        const msg = await incomingOnClient2;
+        expect(msg.type).toBe('message');
+        expect(msg.direction).toBe('in');
+        expect(msg.payload.text).toBe('broadcast check');
+      } finally {
+        client2.disconnect();
+      }
+    });
+  });
+
   // ── quick-need ────────────────────────────────────────────────────────────
 
   describe('quick-need event', () => {

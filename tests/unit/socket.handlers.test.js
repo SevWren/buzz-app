@@ -382,6 +382,24 @@ describe('registerSocketHandlers', () => {
       expectErrorAck(socket);
     });
 
+    it('emits ack type "error" when emoji field is missing', () => {
+      const { socket } = setup();
+      socket.receive('set-status', { label: 'Tired' });
+      expectErrorAck(socket);
+    });
+
+    it('emits ack type "error" when label field is missing', () => {
+      const { socket } = setup();
+      socket.receive('set-status', { emoji: '😴' });
+      expectErrorAck(socket);
+    });
+
+    it('emits ack type "error" when payload is empty object', () => {
+      const { socket } = setup();
+      socket.receive('set-status', {});
+      expectErrorAck(socket);
+    });
+
     it('calls playAlert("status")', () => {
       const { socket } = setup();
       socket.receive('set-status', { emoji: '😴', label: 'Tired' });
@@ -624,6 +642,27 @@ describe('registerSocketHandlers', () => {
       const [, payload] = io.emit.mock.calls[0];
       expect(() => new Date(payload.ts).toISOString()).not.toThrow();
     });
+
+    it('invokes callback with { ok: true } when admin', () => {
+      const { socket } = setup({ isAdmin: true });
+      const cb = vi.fn();
+      socket.receive('admin-mark-read', undefined, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('invokes callback with { ok: false } when not admin', () => {
+      const { socket } = setup({ isAdmin: false });
+      const cb = vi.fn();
+      socket.receive('admin-mark-read', undefined, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
+
+    it('does not throw when no callback is provided', () => {
+      const { socket } = setup({ isAdmin: true });
+      expect(() => socket.receive('admin-mark-read')).not.toThrow();
+    });
   });
 
   // ── disconnect ────────────────────────────────────────────────────────────
@@ -666,7 +705,6 @@ describe('registerSocketHandlers', () => {
       const { socket } = setup();
       for (let i = 0; i < 4; i++) socket.receive('buzz-dad');
       vi.clearAllMocks();
-      // 5th call — must still succeed
       socket.receive('buzz-dad');
       expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
     });
@@ -675,9 +713,117 @@ describe('registerSocketHandlers', () => {
       const { socket } = setup();
       for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
       vi.clearAllMocks();
-      // 6th call — must be rejected
       socket.receive('buzz-dad');
       expectErrorAck(socket);
+    });
+  });
+
+  describe('set-status rate limit (max 5 / 10s)', () => {
+    it('5th set-status within 10s succeeds', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 4; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'status' }));
+    });
+
+    it('6th set-status within 10s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      vi.clearAllMocks();
+      socket.receive('set-status', { emoji: '😴', label: 'Tired' });
+      expectErrorAck(socket);
+    });
+  });
+
+  describe('location-ping rate limit (max 3 / 30s)', () => {
+    const validLocation = { lat: 51.5, lng: -0.12, accuracy: 10 };
+
+    it('3rd location-ping within 30s succeeds', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'location' }));
+    });
+
+    it('4th location-ping within 30s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 3; i++) socket.receive('location-ping', validLocation);
+      vi.clearAllMocks();
+      socket.receive('location-ping', validLocation);
+      expectErrorAck(socket);
+    });
+  });
+
+  describe('battery-low rate limit (max 2 / 60s)', () => {
+    it('2nd battery-low within 60s succeeds', () => {
+      const { socket } = setup();
+      socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'battery-low' }));
+    });
+
+    it('3rd battery-low within 60s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 2; i++) socket.receive('battery-low', { level: 0.1 });
+      vi.clearAllMocks();
+      socket.receive('battery-low', { level: 0.1 });
+      expectErrorAck(socket);
+    });
+  });
+
+  describe('countdown-start rate limit (max 5 / 10s)', () => {
+    it('5th countdown-start within 10s succeeds', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 4; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'countdown' }));
+    });
+
+    it('6th countdown-start within 10s returns error ack', () => {
+      const { socket } = setup();
+      for (let i = 0; i < 5; i++) socket.receive('countdown-start', { minutes: 5 });
+      vi.clearAllMocks();
+      socket.receive('countdown-start', { minutes: 5 });
+      expectErrorAck(socket);
+    });
+  });
+
+  describe('send-reply rate limit (max 20 / 5s)', () => {
+    it('20th send-reply within 5s succeeds', () => {
+      const { socket } = setup({ isAdmin: true });
+      for (let i = 0; i < 19; i++) socket.receive('send-reply', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-reply', { text: 'hi' });
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'reply' }));
+    });
+
+    it('21st send-reply within 5s returns error ack', () => {
+      const { socket } = setup({ isAdmin: true });
+      for (let i = 0; i < 20; i++) socket.receive('send-reply', { text: 'hi' });
+      vi.clearAllMocks();
+      socket.receive('send-reply', { text: 'hi' });
+      expectErrorAck(socket);
+    });
+  });
+
+  describe('rate-limiter cross-socket isolation', () => {
+    it('hitting limit on one socket does not affect a different socket', () => {
+      const { socket: socket1 } = setup();
+      // Exhaust buzz-dad limit on socket1
+      for (let i = 0; i < 5; i++) socket1.receive('buzz-dad');
+      vi.clearAllMocks();
+      socket1.receive('buzz-dad');
+      expectErrorAck(socket1);
+
+      // socket2 has a different ID — its rate-limiter bucket is fresh
+      const { socket: socket2 } = setup();
+      vi.clearAllMocks();
+      socket2.receive('buzz-dad');
+      expect(socket2.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
     });
   });
 });

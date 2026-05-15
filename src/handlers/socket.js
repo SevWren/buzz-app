@@ -326,10 +326,14 @@ export function registerSocketHandlers(io) {
     });
 
     // ── admin-mark-read (admin only) ──────────────────────────────────────────
-    socket.on('admin-mark-read', () => {
-      if (!socket.data.isAdmin) return;
+    socket.on('admin-mark-read', (data, callback) => {
+      if (!socket.data.isAdmin) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
+        return;
+      }
       logger.info({ socketId: socket.id }, 'admin-mark-read received');
       io.emit('messages-read', { ts: new Date().toISOString() });
+      if (typeof callback === 'function') callback({ ok: true });
     });
 
     // ── lifecycle ─────────────────────────────────────────────────────────────
