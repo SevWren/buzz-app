@@ -22,12 +22,20 @@ socket.on('connect', () => {
   setConnState('connected', 'Connected');
   btnReply.disabled = false;
   replyInput.focus();
+  // Reset stale unread state from a previous session before loading fresh history
+  unreadCount = 0;
+  updateUnreadBadge();
+  updateTabTitle();
   loadHistory();
 });
 
 socket.on('disconnect', () => {
   setConnState('disconnected', 'Disconnected');
   btnReply.disabled = true;
+  // Reset title so "(N) Buzz App — Admin" doesn't persist while offline
+  unreadCount = 0;
+  updateUnreadBadge();
+  updateTabTitle();
 });
 
 socket.on('connect_error', () => {
@@ -152,7 +160,21 @@ function addBubble(msg, opts = {}) {
 
   const textEl = document.createElement('span');
   textEl.className = 'bubble-text';
-  textEl.textContent = formatPayload(msg.type, msg.payload); // textContent — XSS safe
+
+  if (msg.type === 'location' && msg.payload) {
+    // Render location as "📍 coords — [Open in Maps]" with a real clickable link
+    const { lat, lng, accuracy } = msg.payload;
+    const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    textEl.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m) — `;
+    const link = document.createElement('a');
+    link.href        = mapsUrl;
+    link.textContent = 'Open in Maps';
+    link.target      = '_blank';
+    link.rel         = 'noopener noreferrer';
+    textEl.appendChild(link);
+  } else {
+    textEl.textContent = formatPayload(msg.type, msg.payload); // textContent — XSS safe
+  }
 
   const meta = document.createElement('div');
   meta.className = 'bubble-meta';
@@ -186,10 +208,9 @@ function formatPayload(type, payload) {
     case 'buzz':        return '🔔 Buzz!';
     case 'quick-need':  return `🚨 Needs: ${payload.need}`;
     case 'status':      return `${payload.emoji} ${payload.label}`;
-    case 'location': {
-      const mapsUrl = `https://maps.google.com/?q=${payload.lat},${payload.lng}`;
-      return `📍 Location: ${payload.lat.toFixed(5)}, ${payload.lng.toFixed(5)} (±${Math.round(payload.accuracy)}m) — ${mapsUrl}`;
-    }
+    case 'location':
+      // Handled specially in addBubble to render a clickable <a> link
+      return `📍 ${payload.lat.toFixed(5)}, ${payload.lng.toFixed(5)} (±${Math.round(payload.accuracy)}m)`;
     case 'battery-low':
       return `🔋 Battery Low: ${payload.level !== null ? Math.round(payload.level * 100) + '%' : 'unknown'}`;
     case 'countdown':   return `⏱ I'll be ready in ${payload.minutes} min`;

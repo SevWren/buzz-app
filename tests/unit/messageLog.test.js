@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Must mock before importing the module under test
 vi.mock('node:fs/promises', () => ({
   appendFile: vi.fn().mockResolvedValue(undefined),
-  readFile:   vi.fn(),
+  readFile:   vi.fn().mockResolvedValue(''),   // default: empty file (no records)
   mkdir:      vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../../src/lib/logger.js', () => ({

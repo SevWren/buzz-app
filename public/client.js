@@ -56,6 +56,14 @@ socket.on('disconnect', (reason) => {
   setConnState('disconnected', 'Disconnected');
   setButtons(false);
   addBubble({ id: null, ts: new Date().toISOString(), direction: 'system', type: 'system', payload: { text: `Disconnected: ${reason}` } });
+  // Clear any active countdown so timers don't accumulate across reconnects
+  if (countdownTimer !== null) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  countdownEndTime = null;
+  countdownDisplay.hidden = true;
+  countdownText.textContent = '';
 });
 
 socket.on('connect_error', () => {

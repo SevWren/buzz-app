@@ -58,7 +58,7 @@ app.use('/admin', adminRouter);
 // Mark connections from localhost as admin sockets.
 // socket.data.isAdmin is checked in send-reply and admin-mark-read handlers.
 io.use((socket, next) => {
-  const raw        = socket.handshake.address;
+  const raw        = socket.handshake.address ?? '';
   const normalized = raw.replace('::ffff:', '');
   socket.data.isAdmin =
     normalized === '127.0.0.1' ||
@@ -74,7 +74,11 @@ registerSocketHandlers(io);
 app.use(errorHandler);
 
 // --- Graceful shutdown ---
+let isShuttingDown = false;
+
 function shutdown(signal) {
+  if (isShuttingDown) return; // guard against double SIGTERM / SIGINT
+  isShuttingDown = true;
   logger.info({ signal }, 'Shutdown signal received, closing server...');
 
   // Step 1: Warn all connected clients before tearing down anything.
