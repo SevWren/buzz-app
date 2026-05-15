@@ -110,7 +110,10 @@ socket.on('server-shutdown', ({ message }) => {
 const VALID_LOG_TYPES = new Set(['client', 'server', 'error', 'system']);
 
 function addLog(type, text) {
-  logEmpty.style.display = 'none';
+  // Detach the empty state placeholder so it doesn't interfere with child limits
+  if (logList.contains(logEmpty)) {
+    logEmpty.remove();
+  }
 
   const safeType = VALID_LOG_TYPES.has(type) ? type : 'system';
   const item = document.createElement('li');
@@ -128,7 +131,7 @@ function addLog(type, text) {
   logList.prepend(item);
 
   // Cap log at 100 visible entries
-  while (logList.children.length > 101) {
+  while (logList.children.length > 100) {
     logList.removeChild(logList.lastChild);
   }
 }
