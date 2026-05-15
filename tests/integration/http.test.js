@@ -33,7 +33,8 @@ function buildApp() {
         defaultSrc:     ["'self'"],
         scriptSrc:      ["'self'"],
         styleSrc:       ["'self'", "'unsafe-inline'"],
-        connectSrc:     ["'self'", 'ws:', 'wss:'],
+        // 'self' covers WebSocket connections to the same origin (CSP Level 3)
+      connectSrc:     ["'self'"],
         fontSrc:        ["'self'", 'data:'],
         imgSrc:         ["'self'", 'data:'],
         objectSrc:      ["'none'"],
@@ -133,13 +134,16 @@ describe('HTTP integration', () => {
       expect(res.headers['strict-transport-security']).toContain('max-age=');
     });
 
-    it('sets Content-Security-Policy header (CSP re-enabled)', async () => {
+    it('sets Content-Security-Policy header (CSP re-enabled, connect-src self-only)', async () => {
       const res = await request(app).get('/api/health');
       const csp = res.headers['content-security-policy'];
       expect(csp).toBeDefined();
       expect(csp).toContain("default-src 'self'");
       expect(csp).toContain("frame-ancestors 'none'");
       expect(csp).toContain("object-src 'none'");
+      // connect-src uses 'self' only — NOT ws:/wss: wildcards
+      expect(csp).toContain("connect-src 'self'");
+      expect(csp).not.toContain('ws:');
     });
 
     it('sets Referrer-Policy: no-referrer', async () => {

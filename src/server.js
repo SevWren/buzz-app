@@ -34,20 +34,24 @@ const io = new Server(httpServer, {
     origin:         config.cors.origin,
     methods:        ['GET', 'POST'],   // only methods actually used
     exposedHeaders: [],                // expose no extra response headers to JS
+    credentials:    false,             // never send cookies/credentials cross-origin
   },
-  maxHttpBufferSize: 16 * 1024,  // 16 KB max message — well above any valid payload
+  // 4 KB max message — the largest valid payload (send-message 500 chars) is ~560 bytes.
+  // 16 KB (previous) was 26× larger than needed; 4 KB keeps generous headroom.
+  maxHttpBufferSize: 4 * 1024,
   transports:        ['websocket'],
   cookie:            false,
-  upgradeTimeout:    10_000,     // abort stalled HTTP→WS upgrade after 10 s
+  upgradeTimeout:    10_000,  // abort stalled HTTP→WS upgrade after 10 s
+  pingTimeout:       5_000,   // 5 s to respond to ping before considering connection dead
+  pingInterval:      25_000,  // send keepalive ping every 25 s
 });
 
 // Reject new connections when the server is already at capacity.
 // Without this, a single IP can open many sockets and bypass per-socket rate limits.
-const MAX_SOCKET_CONNECTIONS = 50;
 io.use((socket, next) => {
-  if (io.engine.clientsCount > MAX_SOCKET_CONNECTIONS) {
+  if (io.engine.clientsCount > config.maxSocketConnections) {
     logger.warn(
-      { address: socket.handshake.address, count: io.engine.clientsCount },
+      { address: socket.handshake?.address, count: io.engine.clientsCount },
       'Socket connection limit exceeded — rejecting new connection',
     );
     return next(new Error('Connection limit exceeded'));
@@ -78,7 +82,10 @@ app.use(helmet({
       defaultSrc:     ["'self'"],
       scriptSrc:      ["'self'"],
       styleSrc:       ["'self'", "'unsafe-inline'"],
-      connectSrc:     ["'self'", 'ws:', 'wss:'],
+      // 'self' in connect-src covers WebSocket connections to the same origin
+    // (confirmed in CSP Level 3 spec and all modern browsers), so explicit
+    // ws:/wss: wildcards are not needed — they would allow connections to any host.
+    connectSrc:     ["'self'"],
       fontSrc:        ["'self'", 'data:'],
       imgSrc:         ["'self'", 'data:'],
       objectSrc:      ["'none'"],
@@ -106,19 +113,28 @@ app.use(cors({
   origin:         config.cors.origin,
   methods:        ['GET', 'POST', 'OPTIONS'],
   exposedHeaders: [],
+  credentials:    false,  // never reflect credentials (cookies/auth) in CORS responses
 }));
 app.use(express.json({ limit: '10kb', strict: true })); // strict: reject bare values, only accept {} and []
 app.use(
   rateLimit({
     windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.max,
+    max:      config.rateLimit.max,
     standardHeaders: true,
-    legacyHeaders: false,
+    legacyHeaders:   false,
+    // Use the same JSON shape the rest of the app uses for errors, so clients
+    // don't have to handle two different error response schemas.
+    handler: (_req, res) => {
+      res.status(429).json({ error: { message: 'Too many requests — please slow down.' } });
+    },
   })
 );
 
 // --- Static & routes ---
-app.use(express.static(join(__dirname, '..', 'public')));
+app.use(express.static(join(__dirname, '..', 'public'), {
+  index:    false,            // don't serve directory index files (prevents listing /fonts/ etc.)
+  dotfiles: 'ignore',         // never serve .env, .git, etc. if accidentally placed in public/
+}));
 app.use('/api', healthRouter);
 app.use('/admin', adminRouter);
 

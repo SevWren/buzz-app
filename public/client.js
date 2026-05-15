@@ -1,6 +1,11 @@
 import { GlitchSequencer } from './matrix.js';
 
-const socket = io({ reconnectionDelayMax: 10_000 });
+const socket = io({
+  reconnectionDelayMax: 10_000,
+  // Limit reconnection attempts to prevent the client reconnecting indefinitely
+  // to a potentially rogue or unavailable server.
+  reconnectionAttempts: 10,
+});
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const connDot   = document.getElementById('conn-dot');
@@ -37,8 +42,10 @@ const sequencer = new GlitchSequencer(
   document.getElementById('matrix-a11y'),
 );
 
-// Debug hook — bypasses prefers-reduced-motion for testing
-window.__matrixTest = (msg) => sequencer.trigger(msg ?? 'Test shutdown message.', { forceAnimation: true });
+// Debug hook — only available on localhost (never exposed in production deployments)
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+  window.__matrixTest = (msg) => sequencer.trigger(msg ?? 'Test shutdown message.', { forceAnimation: true });
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let countdownTimer   = null; // setInterval handle
@@ -234,6 +241,9 @@ socket.on('server-shutdown', ({ message }) => {
 function sendMessage() {
   const text = msgInput.value.trim();
   if (!text) return;
+  // Client-side length guard mirrors the server's Zod max(500) — prevents
+  // unnecessary network round-trips for messages that will be rejected anyway.
+  if (text.length > 500) { addErrorBubble('Message too long (max 500 characters).'); return; }
   socket.emit('send-message', { text }, (resp) => {
     if (!resp?.ok) addErrorBubble(resp?.error ?? 'Failed to send.');
   });
@@ -359,6 +369,8 @@ function formatPayload(type, payload) {
     case 'countdown':   return `⏱ ${payload.minutes} min countdown started`;
     case 'message':     return `💬 ${payload.text}`;
     case 'reply':       return `↩ Dad: ${payload.text}`;
-    default:            return JSON.stringify(payload);
+    // Unknown type — return a safe generic label instead of JSON.stringify(payload),
+    // which would expose the raw payload structure in the UI.
+    default:            return '📨 Message received';
   }
 }

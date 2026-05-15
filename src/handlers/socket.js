@@ -104,6 +104,15 @@ export function registerSocketHandlers(io) {
   }
 
   io.on('connection', (socket) => {
+    // Defensive guard: socket.id must be a non-empty string before it is used
+    // as a Map key in rate limiters and as a log field. In Socket.IO v4 this is
+    // always true, but the guard protects against unexpected future changes.
+    if (typeof socket.id !== 'string' || !socket.id) {
+      logger.warn({ socketId: socket.id }, 'Socket connected with invalid id — disconnecting');
+      socket.disconnect(true);
+      return;
+    }
+
     logger.info(
       { socketId: socket.id, address: socket.handshake?.address },
       'Client connected',
@@ -137,7 +146,7 @@ export function registerSocketHandlers(io) {
 
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'Message validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'Message validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -164,7 +173,7 @@ export function registerSocketHandlers(io) {
       const result = QuickNeedSchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'quick-need validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'quick-need validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -191,7 +200,7 @@ export function registerSocketHandlers(io) {
       const result = StatusSchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'set-status validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'set-status validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -218,7 +227,7 @@ export function registerSocketHandlers(io) {
       const result = LocationSchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'location-ping validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'location-ping validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -245,7 +254,7 @@ export function registerSocketHandlers(io) {
       const result = BatterySchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'battery-low validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'battery-low validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -273,7 +282,7 @@ export function registerSocketHandlers(io) {
       const result = CountdownSchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'countdown-start validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'countdown-start validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -290,7 +299,7 @@ export function registerSocketHandlers(io) {
 
     // ── send-reply (admin only) ───────────────────────────────────────────────
     socket.on('send-reply', (data, callback) => {
-      if (!socket.data.isAdmin) {
+      if (socket.data?.isAdmin !== true) {
         socket.emit('ack', { type: 'error', message: 'Unauthorized.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
         return;
@@ -306,7 +315,7 @@ export function registerSocketHandlers(io) {
       const result = ReplySchema.safeParse(data);
       if (!result.success) {
         const issue = result.error.issues[0]?.message ?? 'Invalid input';
-        logger.warn({ socketId: socket.id, dataType: typeof data }, 'send-reply validation failed');
+        logger.warn({ socketId: socket.id, address: socket.handshake?.address, dataType: typeof data }, 'send-reply validation failed');
         socket.emit('ack', { type: 'error', message: `Validation error: ${issue}` });
         if (typeof callback === 'function') callback({ ok: false, error: issue });
         return;
@@ -330,7 +339,7 @@ export function registerSocketHandlers(io) {
 
     // ── admin-mark-read (admin only) ──────────────────────────────────────────
     socket.on('admin-mark-read', (data, callback) => {
-      if (!socket.data.isAdmin) {
+      if (socket.data?.isAdmin !== true) {
         if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
         return;
       }
@@ -350,7 +359,7 @@ export function registerSocketHandlers(io) {
       batteryLimiter.remove(socket.id);
       countdownLimiter.remove(socket.id);
       replyLimiter.remove(socket.id);
-      logger.info({ socketId: socket.id, reason }, 'Client disconnected');
+      logger.info({ socketId: socket.id, address: socket.handshake?.address, reason }, 'Client disconnected');
     });
 
     socket.on('error', (err) => {

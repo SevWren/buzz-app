@@ -106,13 +106,13 @@ describe('appendMessage', () => {
       .resolves.toBeUndefined();
   });
 
-  it('calls logger.error when appendFile rejects', async () => {
-    appendFile.mockRejectedValueOnce(new Error('disk full'));
+  it('calls logger.error with sanitized errCode/errMessage when appendFile rejects', async () => {
+    appendFile.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
     const { appendMessage } = await getModule();
     await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      expect.stringContaining('messageLog'),
+      { errCode: 'ENOSPC', errMessage: 'disk full' },
+      'messageLog: append failed',
     );
   });
 
@@ -138,15 +138,15 @@ describe('appendMessage', () => {
     expect(record.payload).toEqual({});
   });
 
-  it('does not throw when mkdir rejects (all errors swallowed)', async () => {
+  it('does not throw when mkdir rejects — logs sanitized errCode/errMessage', async () => {
     mkdir.mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
     const { appendMessage } = await getModule();
     await expect(
       appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} })
     ).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      expect.any(String),
+      { errCode: 'EPERM', errMessage: 'EPERM' },
+      'messageLog: append failed',
     );
   });
 
@@ -271,15 +271,26 @@ describe('readRecentMessages', () => {
     expect(result).toHaveLength(2);
   });
 
-  it('returns [] and calls logger.warn when readFile throws EACCES', async () => {
+  it('returns [] and calls logger.warn with sanitized errCode/errMessage on EACCES', async () => {
     const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
     readFile.mockRejectedValueOnce(err);
     const { readRecentMessages } = await getModule();
     const result = await readRecentMessages();
     expect(result).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      expect.any(String),
+      { errCode: 'EACCES', errMessage: 'EACCES' },
+      'messageLog: read failed',
     );
+  });
+
+  it('skips parsed records missing required fields (schema validation)', async () => {
+    const validLine   = JSON.stringify({ id: '1', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
+    const missingType = JSON.stringify({ id: '2', ts: 't', direction: 'in', socketId: 'x', payload: {} }); // missing type
+    const lines = validLine + '\n' + missingType + '\n';
+    readFile.mockResolvedValueOnce(lines);
+    const { readRecentMessages } = await getModule();
+    const result = await readRecentMessages();
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('1');
   });
 });

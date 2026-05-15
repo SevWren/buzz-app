@@ -1,7 +1,10 @@
 // Admin panel client — Dad's reply interface
 // ES module (type="module" on the script tag in admin.html)
 
-const socket = io({ reconnectionDelayMax: 10_000 });
+const socket = io({
+  reconnectionDelayMax: 10_000,
+  reconnectionAttempts: 10,  // prevent indefinite reconnection to an unavailable server
+});
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const connDot     = document.getElementById('conn-dot');
@@ -100,6 +103,8 @@ replyInput.addEventListener('keydown', (e) => {
 function sendReply() {
   const text = replyInput.value.trim();
   if (!text) return;
+  // Client-side guard mirrors server's ReplySchema max(500).
+  if (text.length > 500) { addSystemNote('Reply too long (max 500 characters).'); return; }
   socket.emit('send-reply', { text }, (resp) => {
     if (!resp?.ok) addSystemNote(`Send failed: ${resp?.error ?? 'Unknown error'}`);
   });
@@ -214,15 +219,23 @@ function formatPayload(type, payload) {
     case 'buzz':        return '🔔 Buzz!';
     case 'quick-need':  return `🚨 Needs: ${payload.need}`;
     case 'status':      return `${payload.emoji} ${payload.label}`;
-    case 'location':
+    case 'location': {
+      // Null guard: payload fields may be missing if the record was corrupted.
+      // toFixed() throws TypeError on null/undefined — use optional chaining.
+      const latStr = payload.lat?.toFixed?.(5) ?? payload.lat ?? '?';
+      const lngStr = payload.lng?.toFixed?.(5) ?? payload.lng ?? '?';
+      const acc    = payload.accuracy != null ? `±${Math.round(payload.accuracy)}m` : '';
       // Handled specially in addBubble to render a clickable <a> link
-      return `📍 ${payload.lat.toFixed(5)}, ${payload.lng.toFixed(5)} (±${Math.round(payload.accuracy)}m)`;
+      return `📍 ${latStr}, ${lngStr} ${acc}`.trimEnd();
+    }
     case 'battery-low':
       return `🔋 Battery Low: ${payload.level !== null ? Math.round(payload.level * 100) + '%' : 'unknown'}`;
     case 'countdown':   return `⏱ I'll be ready in ${payload.minutes} min`;
     case 'message':     return `💬 ${payload.text}`;
     case 'reply':       return `↩ ${payload.text}`;
-    default:            return JSON.stringify(payload);
+    // Unknown type — safe generic label rather than JSON.stringify(payload)
+    // to avoid exposing raw payload structure in the admin UI.
+    default:            return '📨 Message';
   }
 }
 

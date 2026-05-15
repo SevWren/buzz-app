@@ -218,12 +218,54 @@ describe('envSchema validation', () => {
   // ── CORS_ORIGIN whitespace behavior ───────────────────────────────────────
   // Source: z.string().min(1) with NO .trim() — whitespace-only strings pass
 
-  it('accepts CORS_ORIGIN of only whitespace (no .trim() in schema — intentional for CORS)', () => {
-    // Unlike socket.js text fields which use .trim().min(1), CORS_ORIGIN has no trim.
-    // A whitespace-only origin passes length check (length >= 1).
-    const result = envSchema.safeParse({ CORS_ORIGIN: '   ' });
+  // ── MAX_SOCKET_CONNECTIONS ────────────────────────────────────────────────
+
+  it('accepts MAX_SOCKET_CONNECTIONS=50 (default)', () => {
+    const result = envSchema.safeParse({});
     expect(result.success).toBe(true);
-    expect(result.data.CORS_ORIGIN).toBe('   ');
+    expect(result.data.MAX_SOCKET_CONNECTIONS).toBe(50);
+  });
+
+  it('accepts MAX_SOCKET_CONNECTIONS=1 (minimum)', () => {
+    const result = envSchema.safeParse({ MAX_SOCKET_CONNECTIONS: '1' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects MAX_SOCKET_CONNECTIONS=0', () => {
+    expect(envSchema.safeParse({ MAX_SOCKET_CONNECTIONS: '0' }).success).toBe(false);
+  });
+
+  it('rejects MAX_SOCKET_CONNECTIONS=1001', () => {
+    expect(envSchema.safeParse({ MAX_SOCKET_CONNECTIONS: '1001' }).success).toBe(false);
+  });
+
+  // ── CORS_ORIGIN URL validation ─────────────────────────────────────────────
+
+  it('accepts CORS_ORIGIN="*" (wildcard)', () => {
+    expect(envSchema.safeParse({ CORS_ORIGIN: '*' }).success).toBe(true);
+  });
+
+  it('accepts CORS_ORIGIN as valid http origin', () => {
+    expect(envSchema.safeParse({ CORS_ORIGIN: 'http://192.168.1.50:3000' }).success).toBe(true);
+  });
+
+  it('accepts CORS_ORIGIN as valid https origin', () => {
+    expect(envSchema.safeParse({ CORS_ORIGIN: 'https://example.com' }).success).toBe(true);
+  });
+
+  it('rejects CORS_ORIGIN as a bare hostname (no scheme)', () => {
+    expect(envSchema.safeParse({ CORS_ORIGIN: 'localhost:3000' }).success).toBe(false);
+  });
+
+  it('rejects CORS_ORIGIN as a single character that is not "*"', () => {
+    expect(envSchema.safeParse({ CORS_ORIGIN: 'x' }).success).toBe(false);
+  });
+
+  it('rejects CORS_ORIGIN of only whitespace (URL validation now enforced)', () => {
+    // The refine() check requires '*' or a valid http/https origin.
+    // Whitespace-only strings match neither, so they are rejected.
+    const result = envSchema.safeParse({ CORS_ORIGIN: '   ' });
+    expect(result.success).toBe(false);
   });
 
   // ── PORT float variants ───────────────────────────────────────────────────
@@ -242,7 +284,7 @@ describe('config object shape', () => {
   it('has exactly the expected top-level keys', async () => {
     const { config } = await import('../../src/config/index.js');
     expect(Object.keys(config).sort()).toEqual(
-      ['cors', 'logLevel', 'nodeEnv', 'port', 'rateLimit'].sort(),
+      ['cors', 'logLevel', 'maxSocketConnections', 'nodeEnv', 'port', 'rateLimit'].sort(),
     );
   });
 

@@ -26,7 +26,23 @@ export const envSchema = z.object({
     })
     .default('info'),
 
-  CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN cannot be empty').default('*'),
+  CORS_ORIGIN: z
+    .string()
+    .min(1, 'CORS_ORIGIN cannot be empty')
+    // Must be the wildcard '*' or a valid http/https origin (no trailing slash).
+    // Rejects obviously malformed values like bare strings, path-only values, etc.
+    .refine(
+      (v) => v === '*' || /^https?:\/\/[^/]+$/.test(v),
+      'CORS_ORIGIN must be "*" or a valid origin (e.g. http://192.168.1.50:3000)',
+    )
+    .default('*'),
+
+  MAX_SOCKET_CONNECTIONS: z.coerce
+    .number({ invalid_type_error: 'MAX_SOCKET_CONNECTIONS must be a number' })
+    .int('MAX_SOCKET_CONNECTIONS must be an integer')
+    .min(1,    'MAX_SOCKET_CONNECTIONS must be >= 1')
+    .max(1000, 'MAX_SOCKET_CONNECTIONS must be <= 1000')
+    .default(50),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -43,9 +59,10 @@ if (!result.success) {
 const env = result.data;
 
 export const config = {
-  port: env.PORT,
-  nodeEnv: env.NODE_ENV,
-  logLevel: env.LOG_LEVEL,
+  port:                env.PORT,
+  nodeEnv:             env.NODE_ENV,
+  logLevel:            env.LOG_LEVEL,
+  maxSocketConnections: env.MAX_SOCKET_CONNECTIONS,
   cors: {
     origin: env.CORS_ORIGIN,
   },

@@ -24,9 +24,16 @@ export async function appendMessage(record) {
   // any downstream parsing that depends on field types.
   if (!record || typeof record !== 'object') return;
 
-  const direction = typeof record.direction === 'string' ? record.direction : '';
-  const type      = typeof record.type      === 'string' ? record.type      : '';
-  const socketId  = typeof record.socketId  === 'string' ? record.socketId  : '';
+  // Cap field lengths to prevent excessively long strings from being persisted.
+  // All legitimate values are well under these limits; truncation only affects
+  // accidental misuse or malformed calls from future code changes.
+  const MAX_FIELD_LEN = 128;
+  const direction = typeof record.direction === 'string'
+    ? record.direction.slice(0, MAX_FIELD_LEN) : '';
+  const type      = typeof record.type      === 'string'
+    ? record.type.slice(0, MAX_FIELD_LEN)      : '';
+  const socketId  = typeof record.socketId  === 'string'
+    ? record.socketId.slice(0, MAX_FIELD_LEN)  : '';
   const payload   =
     record.payload !== null && typeof record.payload === 'object'
       ? record.payload
@@ -45,7 +52,9 @@ export async function appendMessage(record) {
     await mkdir(DATA_DIR, { recursive: true });
     await appendFile(LOG_PATH, line, 'utf8');
   } catch (err) {
-    logger.error({ err }, 'messageLog: append failed');
+    // Log only code and message — never the full err object, which can contain
+    // file-system paths from Node.js stack traces.
+    logger.error({ errCode: err?.code, errMessage: err?.message }, 'messageLog: append failed');
   }
 }
 
@@ -64,7 +73,22 @@ export async function readRecentMessages(limit = 100) {
     const parsed = [];
     for (const line of recent) {
       try {
-        parsed.push(JSON.parse(line));
+        const record = JSON.parse(line);
+        // Validate required fields — skip records where the log entry is corrupted
+        // or was written by a different version. This prevents malformed/injected
+        // log entries from reaching the admin panel as arbitrary objects.
+        if (
+          record !== null &&
+          typeof record === 'object' &&
+          typeof record.id        === 'string' &&
+          typeof record.ts        === 'string' &&
+          typeof record.direction === 'string' &&
+          typeof record.type      === 'string' &&
+          typeof record.socketId  === 'string' &&
+          record.payload !== undefined
+        ) {
+          parsed.push(record);
+        }
       } catch {
         // Skip malformed lines
       }
@@ -72,7 +96,8 @@ export async function readRecentMessages(limit = 100) {
     return parsed; // oldest-first (file is append-order)
   } catch (err) {
     if (err.code !== 'ENOENT') {
-      logger.warn({ err }, 'messageLog: read failed');
+      // Log only code and message — never the full err object (see append comment).
+      logger.warn({ errCode: err?.code, errMessage: err?.message }, 'messageLog: read failed');
     }
     return [];
   }
