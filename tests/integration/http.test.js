@@ -91,9 +91,9 @@ describe('HTTP integration', () => {
       expect(res.headers['x-content-type-options']).toBe('nosniff');
     });
 
-    it('sets X-Frame-Options', async () => {
+    it('sets X-Frame-Options: SAMEORIGIN', async () => {
       const res = await request(app).get('/api/health');
-      expect(res.headers['x-frame-options']).toBeDefined();
+      expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
     });
 
     it('sets X-DNS-Prefetch-Control', async () => {
@@ -110,11 +110,11 @@ describe('HTTP integration', () => {
   // ── CORS headers ──────────────────────────────────────────────────────────
 
   describe('CORS', () => {
-    it('sets Access-Control-Allow-Origin for a GET request', async () => {
+    it('sets Access-Control-Allow-Origin to "*" for a GET request (wildcard config)', async () => {
       const res = await request(app)
         .get('/api/health')
         .set('Origin', 'http://example.com');
-      expect(res.headers['access-control-allow-origin']).toBeDefined();
+      expect(res.headers['access-control-allow-origin']).toBe('*');
     });
 
     it('responds to OPTIONS preflight with 204', async () => {
@@ -204,6 +204,11 @@ describe('HTTP integration', () => {
       expect(res.headers['ratelimit-limit']).toBeDefined();
     });
 
+    it('RateLimit-Limit header equals configured max (100)', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.headers['ratelimit-limit']).toBe('100');
+    });
+
     it('returns 429 after exceeding the request limit', async () => {
       // Build a tight-limit app (max 3 requests per window) so the test
       // can reach the threshold without firing 100 real requests.
@@ -220,6 +225,49 @@ describe('HTTP integration', () => {
       // The 4th request must be rejected
       const blocked = await request(tightApp).get('/api/health');
       expect(blocked.status).toBe(429);
+    });
+
+    it('RateLimit-Remaining decrements after each request', async () => {
+      const countApp = express();
+      countApp.use(rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false }));
+      countApp.use('/api', healthRouter);
+      const r1 = await request(countApp).get('/api/health');
+      const r2 = await request(countApp).get('/api/health');
+      const rem1 = parseInt(r1.headers['ratelimit-remaining'], 10);
+      const rem2 = parseInt(r2.headers['ratelimit-remaining'], 10);
+      expect(rem2).toBe(rem1 - 1);
+    });
+  });
+
+  // ── Error handler integration ─────────────────────────────────────────────
+
+  describe('error handler', () => {
+    it('returns 500 JSON { error: { message } } when a route throws synchronously', async () => {
+      const throwApp = buildApp();
+      throwApp.get('/api/throw', () => { throw new Error('boom'); });
+      throwApp.use(errorHandler);
+      const res = await request(throwApp).get('/api/throw');
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: { message: 'boom' } });
+    });
+  });
+
+  // ── JSON body boundary ────────────────────────────────────────────────────
+
+  describe('JSON body size boundary', () => {
+    let echoApp;
+    beforeAll(() => {
+      echoApp = buildApp();
+      echoApp.post('/api/echo', (req, res) => res.json({ received: true }));
+    });
+
+    it('accepts a JSON body well under 10 KB', async () => {
+      const body = JSON.stringify({ data: 'x'.repeat(500) });
+      const res = await request(echoApp)
+        .post('/api/echo')
+        .set('Content-Type', 'application/json')
+        .send(body);
+      expect(res.status).toBe(200);
     });
   });
 });

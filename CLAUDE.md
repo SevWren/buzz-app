@@ -190,6 +190,14 @@ Each record in `data/messages.jsonl` is a JSON object on one line:
 - `vitest.config.js` sets `testTimeout: 10_000` — enough for real TCP socket setup without being slow.
 - `src/server.js` is excluded from coverage thresholds (bootstrap; covered by integration tests but not isolatable).
 - New modules (`messageLog`, `audioAlert`, `adminGuard`, `admin.route`) each have dedicated unit test files.
+- **314 tests** across 10 files. Current coverage: ~96% statements, ~85% branches, ~92% functions.
+- **Hardening notes:**
+  - `errorHandler` status sanitization: only `Number.isInteger(raw) && raw >= 400 && raw <= 599` is valid — NaN/strings/out-of-range all fall back to 500.
+  - `appendMessage` is fire-and-forget in socket handlers — rejections are caught internally, never surfaced to the client.
+  - `readRecentMessages(0)` returns ALL records — `slice(-0) === slice(0)` in JS.
+  - `adminGuard` uses exact string comparison after stripping `::ffff:` — whitespace in IP strings blocks access.
+  - `AUDIO_MAP` has no top-level `'quick-need'` key — only `'quick-need:Subtype'` entries. `playAlert('quick-need', null)` is silent.
+  - `CORS_ORIGIN` schema has no `.trim()` — whitespace-only values pass `.min(1)` (intentional for CORS use case).
 
 ## Security Notes
 

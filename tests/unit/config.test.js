@@ -214,4 +214,45 @@ describe('envSchema validation', () => {
     expect(result.data.LOG_LEVEL).toBe('info');
     expect(result.data.CORS_ORIGIN).toBe('*');
   });
+
+  // ── CORS_ORIGIN whitespace behavior ───────────────────────────────────────
+  // Source: z.string().min(1) with NO .trim() — whitespace-only strings pass
+
+  it('accepts CORS_ORIGIN of only whitespace (no .trim() in schema — intentional for CORS)', () => {
+    // Unlike socket.js text fields which use .trim().min(1), CORS_ORIGIN has no trim.
+    // A whitespace-only origin passes length check (length >= 1).
+    const result = envSchema.safeParse({ CORS_ORIGIN: '   ' });
+    expect(result.success).toBe(true);
+    expect(result.data.CORS_ORIGIN).toBe('   ');
+  });
+
+  // ── PORT float variants ───────────────────────────────────────────────────
+
+  it('rejects PORT="1.5" (float string — .int() rejects after coercion)', () => {
+    const result = envSchema.safeParse({ PORT: '1.5' });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── Config object shape ───────────────────────────────────────────────────────
+
+describe('config object shape', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('has exactly the expected top-level keys', async () => {
+    const { config } = await import('../../src/config/index.js');
+    expect(Object.keys(config).sort()).toEqual(
+      ['cors', 'logLevel', 'nodeEnv', 'port', 'rateLimit'].sort(),
+    );
+  });
+
+  it('cors has exactly an origin key', async () => {
+    const { config } = await import('../../src/config/index.js');
+    expect(Object.keys(config.cors)).toEqual(['origin']);
+  });
+
+  it('rateLimit has exactly windowMs and max keys', async () => {
+    const { config } = await import('../../src/config/index.js');
+    expect(Object.keys(config.rateLimit).sort()).toEqual(['max', 'windowMs'].sort());
+  });
 });

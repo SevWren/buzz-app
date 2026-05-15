@@ -68,4 +68,28 @@ describe('GET /api/health', () => {
     const second = await request(app).get('/api/health');
     expect(second.body.uptime).toBeGreaterThanOrEqual(first.body.uptime);
   });
+
+  // ── Cache-Control header ──────────────────────────────────────────────────
+  // Source: res.set('Cache-Control', 'no-store') in health.js:8
+
+  it('sets Cache-Control: no-store header', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  // ── Content-Type charset ──────────────────────────────────────────────────
+
+  it('Content-Type includes charset=utf-8', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.headers['content-type']).toMatch(/charset=utf-8/i);
+  });
+
+  // ── uptime precision ──────────────────────────────────────────────────────
+  // Source: Math.floor(process.uptime()) — always a finite, non-negative integer
+
+  it('body.uptime is a finite non-negative number', async () => {
+    const res = await request(app).get('/api/health');
+    expect(Number.isFinite(res.body.uptime)).toBe(true);
+    expect(res.body.uptime).toBeGreaterThanOrEqual(0);
+  });
 });

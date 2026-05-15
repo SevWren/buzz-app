@@ -438,4 +438,89 @@ describe('Socket.IO integration', () => {
       }
     });
   });
+
+  // ── Admin authorization — non-admin socket ────────────────────────────────
+
+  describe('admin authorization — non-admin socket', () => {
+    let nonAdminServer, nonAdminIo, nonAdminPort;
+
+    beforeAll(async () => {
+      // Build a second server that always sets isAdmin = false
+      const app2 = express();
+      const http2 = createServer(app2);
+      nonAdminIo = new Server(http2, { cors: { origin: '*' } });
+      nonAdminIo.use((socket, next) => {
+        socket.data.isAdmin = false;
+        next();
+      });
+      registerSocketHandlers(nonAdminIo);
+      await new Promise((resolve) => http2.listen(0, resolve));
+      nonAdminPort = http2.address().port;
+      nonAdminServer = http2;
+    });
+
+    afterAll(async () => {
+      nonAdminIo.disconnectSockets(true);
+      await new Promise((resolve) => nonAdminServer.close(resolve));
+    });
+
+    it('send-reply returns { ok: false, error: "Unauthorized" } for non-admin socket', async () => {
+      const c = Client(`http://localhost:${nonAdminPort}`, { forceNew: true, transports: ['websocket'] });
+      try {
+        await waitForConnect(c);
+        const response = await new Promise((resolve) => {
+          c.emit('send-reply', { text: 'hello' }, resolve);
+        });
+        expect(response).toStrictEqual({ ok: false, error: 'Unauthorized' });
+      } finally {
+        c.disconnect();
+      }
+    });
+
+    it('admin-mark-read returns { ok: false, error: "Unauthorized" } for non-admin socket', async () => {
+      const c = Client(`http://localhost:${nonAdminPort}`, { forceNew: true, transports: ['websocket'] });
+      try {
+        await waitForConnect(c);
+        const response = await new Promise((resolve) => {
+          c.emit('admin-mark-read', undefined, resolve);
+        });
+        expect(response).toStrictEqual({ ok: false, error: 'Unauthorized' });
+      } finally {
+        c.disconnect();
+      }
+    });
+  });
+
+  // ── Rate-limit isolation across reconnects ────────────────────────────────
+
+  describe('rate-limit isolation', () => {
+    it('new socket connection starts with fresh rate-limit counter', async () => {
+      // Exhaust buzz-dad limit (5 per 10s) on the current client — await each ack
+      // sequentially so we don't mis-attribute acks to the wrong emission.
+      for (let i = 0; i < 5; i++) {
+        const ackP = nextAck(client);
+        client.emit('buzz-dad');
+        const ack = await ackP;
+        expect(ack.type).toBe('buzz');
+      }
+
+      // 6th emission on the same socket must be rate-limited
+      const blockedP = nextAck(client);
+      client.emit('buzz-dad');
+      const blockedAck = await blockedP;
+      expect(blockedAck.type).toBe('error');
+
+      // A fresh socket has a different socketId → clean rate-limit bucket
+      const freshClient = Client(`http://localhost:${port}`, { forceNew: true, transports: ['websocket'] });
+      try {
+        await waitForConnect(freshClient);
+        const ackPromise = nextAck(freshClient);
+        freshClient.emit('buzz-dad');
+        const ack = await ackPromise;
+        expect(ack.type).toBe('buzz');
+      } finally {
+        freshClient.disconnect();
+      }
+    });
+  });
 });

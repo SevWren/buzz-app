@@ -100,6 +100,41 @@ describe('appendMessage', () => {
       expect.stringContaining('messageLog'),
     );
   });
+
+  it('does not throw when mkdir rejects (all errors swallowed)', async () => {
+    mkdir.mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+    const { appendMessage } = await getModule();
+    await expect(
+      appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} })
+    ).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.any(String),
+    );
+  });
+
+  it('preserves unicode characters in payload through JSON round-trip', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'message', socketId: 'x', payload: { text: '日本語 🔥' } });
+    const [, content] = appendFile.mock.calls[0];
+    const record = JSON.parse(content.trim());
+    expect(record.payload.text).toBe('日本語 🔥');
+  });
+
+  it('writes valid JSONL for empty payload {}', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
+    const [, content] = appendFile.mock.calls[0];
+    const record = JSON.parse(content.trim());
+    expect(record.payload).toEqual({});
+  });
+
+  it('appendFile is called with "utf8" encoding as third argument', async () => {
+    const { appendMessage } = await getModule();
+    await appendMessage({ direction: 'in', type: 'buzz', socketId: 'x', payload: {} });
+    const [, , encoding] = appendFile.mock.calls[0];
+    expect(encoding).toBe('utf8');
+  });
 });
 
 describe('readRecentMessages', () => {
@@ -165,5 +200,41 @@ describe('readRecentMessages', () => {
     expect(result).toHaveLength(3);
     expect(result[0].id).toBe('7');
     expect(result[2].id).toBe('9');
+  });
+
+  it('returns ALL records when limit=0 (slice(-0) === slice(0) in JS)', async () => {
+    // JavaScript: array.slice(-0) === array.slice(0) — returns all elements
+    const lines = [
+      JSON.stringify({ id: '1', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
+      JSON.stringify({ id: '2', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
+      JSON.stringify({ id: '3', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
+    ].join('\n') + '\n';
+    readFile.mockResolvedValueOnce(lines);
+    const { readRecentMessages } = await getModule();
+    const result = await readRecentMessages(0);
+    expect(result).toHaveLength(3);
+  });
+
+  it('returns all lines when limit exceeds total record count', async () => {
+    const lines = [
+      JSON.stringify({ id: '1', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
+      JSON.stringify({ id: '2', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
+    ].join('\n') + '\n';
+    readFile.mockResolvedValueOnce(lines);
+    const { readRecentMessages } = await getModule();
+    const result = await readRecentMessages(100);
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns [] and calls logger.warn when readFile throws EACCES', async () => {
+    const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+    readFile.mockRejectedValueOnce(err);
+    const { readRecentMessages } = await getModule();
+    const result = await readRecentMessages();
+    expect(result).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.any(String),
+    );
   });
 });

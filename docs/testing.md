@@ -84,60 +84,75 @@ Tests every Socket.IO event handler in isolation using a mock `io` and mock `soc
 - Validation: invalid payload shapes are rejected with descriptive error
 - Auth: `send-reply` and `admin-mark-read` check `socket.data.isAdmin`
 - Disconnect cleanup: all rate limiter entries removed
+- Exact coordinate boundaries: `lat=±90`, `lng=±180`, `accuracy=0` accepted; values just over rejected
+- Battery level boundaries: `level=0` and `level=1` accepted; out-of-range rejected
+- Falsy `isAdmin` variants: `undefined`, `null`, and `0` all correctly trigger Unauthorized
+- `appendMessage` fire-and-forget: rejection does not surface as an error to the client
+- Broadcast payload shape: `incoming-message` events include exact `id`, `direction`, `type`, `payload` fields
+- Schema independence: `set-status` validates emoji and label as separate enums (cross-pairing documented)
 
 ### `messageLog.test.js`
 
-Tests `appendMessage` and `readRecentMessages` using a temp directory.
-- `appendMessage`: creates `data/` dir if missing, writes valid JSON lines, swallows errors gracefully
-- `readRecentMessages`: returns `[]` when file doesn't exist (ENOENT), parses lines correctly, skips malformed lines, respects the `limit` parameter
+Tests `appendMessage` and `readRecentMessages` using mocked `fs/promises`.
+- `appendMessage`: creates `data/` dir if missing, writes valid JSON lines, swallows all errors gracefully (including `mkdir` failures), preserves unicode, writes `utf8` encoding
+- `readRecentMessages`: returns `[]` for ENOENT and all other read errors (non-ENOENT logged with `warn`), parses lines correctly, skips malformed lines, respects the `limit` parameter
+- Edge cases: `limit=0` returns all records (`slice(-0) === slice(0)` in JS), `limit > total` returns all lines
 
 ### `audioAlert.test.js`
 
 Mocks `play-sound` to verify:
-- Correct MP3 file selected for each event type and subtype
+- Correct MP3 file selected for each event type and subtype, including the `assets/` directory segment in the path
 - `player.play()` called with the right path
 - Errors from `player.play()` are caught and logged, never thrown
 - `reply` type is silent (no `player.play()` call)
-- Unknown types are silent
+- Unknown types, `null`, `undefined`, and empty-string types are silent
+- Wrong-case types (e.g. `'Buzz'`) are silent — AUDIO_MAP keys are lowercase
+- `quick-need` with invalid or missing subtype is silent — no top-level `quick-need` key exists in AUDIO_MAP
 
 ### `adminGuard.test.js`
 
 Tests the middleware with various `req.ip` values:
-- `127.0.0.1` — allowed
-- `::1` — allowed
-- `::ffff:127.0.0.1` — allowed (IPv4-mapped prefix stripped)
-- `192.168.1.50` — 403
-- `10.0.0.1` — 403
+- `127.0.0.1`, `::1`, `::ffff:127.0.0.1` — allowed
+- `192.168.1.50`, `10.0.0.1`, `::ffff:10.0.0.1` — 403
+- Both `req.ip` and `req.socket` undefined — 403 (falls back to `''`)
+- Leading/trailing whitespace in IP string — 403 (exact string comparison)
+- Logger message and error body asserted to exact values from source
 
 ### `admin.route.test.js`
 
 Tests both admin endpoints:
 - `GET /admin` from localhost — sends `admin.html`
-- `GET /admin` from non-localhost — 403
-- `GET /admin/history` from localhost — returns `{ messages: [] }` or actual records
-- `GET /admin/history` from non-localhost — 403
+- `GET /admin/history` from localhost — returns `{ messages: [] }` or full message objects
+- Response message objects validated against complete schema (all fields, not just `id`)
+- `readRecentMessages` called exactly once with argument `100`
+- Error propagation: `readRecentMessages` rejection → 500
 
 ### `config.test.js`
 
 Tests `envSchema` directly (not the exported `config` object, which triggers `process.exit` on failure). Covers:
-- Valid env vars
-- Missing required vars
-- Out-of-range port numbers
-- Invalid `NODE_ENV` values
-- `LOG_LEVEL` validation
+- Valid env vars and defaults
+- Out-of-range and non-integer PORT values (including floats like `'1.5'`)
+- Invalid `NODE_ENV` and `LOG_LEVEL` enum values
+- `CORS_ORIGIN` empty string rejected; whitespace-only accepted (no `.trim()` in schema — intentional)
+- Config object shape: exact top-level keys, `cors`, and `rateLimit` sub-keys verified
 
 ### `errorHandler.test.js`
 
 Tests the Express error handler:
-- Returns 500 JSON with error message
-- Does not leak stack traces in production mode
-- Handles errors without `message` property
+- Returns 500 for bogus `err.status` values: `NaN`, `999`, `-1`, `"404"` (string), `0`, `3.14` (float)
+- `null` error crashes the handler (no null guard — behavior documented)
+- String error handled without throwing
+- Does not leak 5xx error messages in production (`NODE_ENV=production`)
+- 4xx messages are revealed in production (client error, not masked)
+- Call order: `res.status` always before `res.json`
 
 ### `health.route.test.js`
 
 Tests `GET /api/health`:
-- Returns 200 with correct shape
-- `Cache-Control: no-store` header present
+- Returns 200 with exact shape `{ status, uptime, timestamp }`
+- `Cache-Control: no-store` header verified to exact value
+- `Content-Type` includes `charset=utf-8`
+- `uptime` is finite and non-negative (`Number.isFinite` check)
 
 ---
 
@@ -166,10 +181,12 @@ Using port `:0` is critical — it eliminates port conflicts in CI where multipl
 
 ### `http.test.js`
 
-- `GET /` returns 200 (static HTML)
 - `GET /api/health` returns 200 with correct shape
-- `GET /admin` from non-localhost returns 403
-- JSON body size limit: payloads over 10 KB return 413
+- Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, no `X-Powered-By`
+- CORS: `Access-Control-Allow-Origin: *` for wildcard config; preflight returns 200/204
+- JSON body size limit: payloads over 10 KB return 413; under 10 KB accepted
+- Rate limiting: `RateLimit-Limit: 100`; `RateLimit-Remaining` decrements per request; 429 after limit exceeded
+- Error handler wired: route that throws synchronously returns 500 `{ error: { message } }`
 - Non-existent routes return 404
 
 ### `socket.test.js`
@@ -181,7 +198,8 @@ Using port `:0` is critical — it eliminates port conflicts in CI where multipl
 - `location-ping`: coordinate bounds enforced
 - `battery-low`: level 0–1 passes; out-of-range rejected; null passes
 - `countdown-start`: valid minutes pass; invalid minutes rejected
-- `send-reply`: non-localhost socket receives `Unauthorized` error
+- `send-reply` and `admin-mark-read`: non-admin sockets receive `{ ok: false, error: "Unauthorized" }` (verified against a second server that always sets `isAdmin = false`)
+- Rate-limit isolation: fresh socket connection starts with clean counters even after previous socket exhausted its limit
 - Multiple clients: `incoming-message` broadcast received by all connected clients
 - Disconnect: server handles client disconnect cleanly
 

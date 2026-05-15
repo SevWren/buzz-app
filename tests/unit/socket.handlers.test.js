@@ -422,6 +422,28 @@ describe('registerSocketHandlers', () => {
         expect.objectContaining({ type: 'status' }),
       );
     });
+
+    it('rejects valid emoji paired with invalid label', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('set-status', { emoji: '😴', label: 'INVALID_LABEL' }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('rejects invalid emoji paired with valid label', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('set-status', { emoji: '🤡', label: 'Tired' }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('accepts mismatched valid emoji and valid label (schema validates fields independently)', () => {
+      // StatusSchema validates emoji and label as separate enums — cross-pairing is NOT enforced
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('set-status', { emoji: '😴', label: 'Hungry' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
   });
 
   // ── location-ping ─────────────────────────────────────────────────────────
@@ -463,6 +485,55 @@ describe('registerSocketHandlers', () => {
       expect(appendMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'location' }),
       );
+    });
+
+    it('accepts lat=90 (north pole exact boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 90, lng: 0, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('accepts lat=-90 (south pole exact boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: -90, lng: 0, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('accepts lng=180 (east boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 0, lng: 180, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('accepts lng=-180 (west boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 0, lng: -180, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('accepts accuracy=0 (zero accuracy)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 0, lng: 0, accuracy: 0 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('rejects lat=90.001 (just over north pole)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 90.001, lng: 0, accuracy: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('rejects accuracy=-0.001 (negative accuracy)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('location-ping', { lat: 0, lng: 0, accuracy: -0.001 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
   });
 
@@ -511,6 +582,34 @@ describe('registerSocketHandlers', () => {
       expect(appendMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'battery-low' }),
       );
+    });
+
+    it('accepts level=0 (empty battery, exact min boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('battery-low', { level: 0 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('accepts level=1 (full battery, exact max boundary)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('battery-low', { level: 1 }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('rejects level=1.001 (just over max)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('battery-low', { level: 1.001 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('rejects level=-0.001 (just under min)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('battery-low', { level: -0.001 }, cb);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
   });
 
@@ -619,6 +718,27 @@ describe('registerSocketHandlers', () => {
       socket.receive('send-reply', { text: 'x'.repeat(501) });
       expectErrorAck(socket);
     });
+
+    it('returns Unauthorized when socket.data.isAdmin is undefined', () => {
+      const { socket } = setup({ isAdmin: undefined });
+      const cb = vi.fn();
+      socket.receive('send-reply', { text: 'hi' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
+
+    it('returns Unauthorized when socket.data.isAdmin is null', () => {
+      const { socket } = setup({ isAdmin: null });
+      const cb = vi.fn();
+      socket.receive('send-reply', { text: 'hi' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
+
+    it('returns Unauthorized when socket.data.isAdmin is 0', () => {
+      const { socket } = setup({ isAdmin: 0 });
+      const cb = vi.fn();
+      socket.receive('send-reply', { text: 'hi' }, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
   });
 
   // ── admin-mark-read ───────────────────────────────────────────────────────
@@ -662,6 +782,27 @@ describe('registerSocketHandlers', () => {
     it('does not throw when no callback is provided', () => {
       const { socket } = setup({ isAdmin: true });
       expect(() => socket.receive('admin-mark-read')).not.toThrow();
+    });
+
+    it('returns Unauthorized when socket.data.isAdmin is undefined', () => {
+      const { socket } = setup({ isAdmin: undefined });
+      const cb = vi.fn();
+      socket.receive('admin-mark-read', undefined, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
+
+    it('returns Unauthorized when socket.data.isAdmin is null', () => {
+      const { socket } = setup({ isAdmin: null });
+      const cb = vi.fn();
+      socket.receive('admin-mark-read', undefined, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
+    });
+
+    it('returns Unauthorized when socket.data.isAdmin is 0', () => {
+      const { socket } = setup({ isAdmin: 0 });
+      const cb = vi.fn();
+      socket.receive('admin-mark-read', undefined, cb);
+      expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Unauthorized' });
     });
   });
 
@@ -824,6 +965,79 @@ describe('registerSocketHandlers', () => {
       vi.clearAllMocks();
       socket2.receive('buzz-dad');
       expect(socket2.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
+    });
+  });
+
+  // ── appendMessage fire-and-forget rejection ────────────────────────────────
+
+  describe('appendMessage rejection — fire-and-forget, must not surface to client', () => {
+    it('send-message: callback still receives { ok: true } when appendMessage rejects', async () => {
+      appendMessage.mockRejectedValueOnce(new Error('disk full'));
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('send-message', { text: 'hello' }, cb);
+      // Allow the rejected promise microtask to settle
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('buzz-dad: ack type is "buzz" (not "error") when appendMessage rejects', async () => {
+      appendMessage.mockRejectedValueOnce(new Error('disk full'));
+      const { socket } = setup();
+      socket.receive('buzz-dad');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(socket.emit).toHaveBeenCalledWith('ack', expect.objectContaining({ type: 'buzz' }));
+      // Verify no error ack was ever emitted
+      const errorAcks = socket.emit.mock.calls.filter(
+        ([event, payload]) => event === 'ack' && payload?.type === 'error',
+      );
+      expect(errorAcks).toHaveLength(0);
+    });
+  });
+
+  // ── incoming-message broadcast payload shape ───────────────────────────────
+
+  describe('io.emit incoming-message payload shape', () => {
+    it('buzz-dad broadcast includes id, direction, type, payload', () => {
+      const { socket, io } = setup();
+      socket.receive('buzz-dad');
+      expect(io.emit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({
+          id:        'test-uuid-1234',
+          direction: 'in',
+          type:      'buzz',
+          payload:   {},
+          ts:        expect.any(String),
+        }),
+      );
+    });
+
+    it('send-message broadcast includes correct payload.text', () => {
+      const { socket, io } = setup();
+      socket.receive('send-message', { text: 'hello world' });
+      expect(io.emit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({
+          id:        'test-uuid-1234',
+          direction: 'in',
+          type:      'message',
+          payload:   { text: 'hello world' },
+        }),
+      );
+    });
+
+    it('send-reply broadcast has direction "out"', () => {
+      const { socket, io } = setup({ isAdmin: true });
+      socket.receive('send-reply', { text: 'on my way' });
+      expect(io.emit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({
+          direction: 'out',
+          type:      'reply',
+          payload:   { text: 'on my way' },
+        }),
+      );
     });
   });
 });

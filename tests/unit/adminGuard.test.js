@@ -62,15 +62,15 @@ describe('adminGuard middleware', () => {
     adminGuard(makeReq('192.168.1.50'), makeRes(), vi.fn());
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ ip: '192.168.1.50' }),
-      expect.any(String),
+      'Admin access denied from non-localhost IP',
     );
   });
 
-  it('res.json body has error field', () => {
+  it('res.json body has exact error message', () => {
     const res = makeRes();
     adminGuard(makeReq('192.168.1.50'), res, vi.fn());
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.any(String) }),
+      { error: 'Admin access is restricted to localhost only.' },
     );
   });
 
@@ -84,6 +84,53 @@ describe('adminGuard middleware', () => {
   it('returns 403 for empty string IP (treats as non-local)', () => {
     const res = makeRes();
     adminGuard({ ip: '', socket: { remoteAddress: '' } }, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  // ── Both IP sources undefined ──────────────────────────────────────────────
+  // Source: req.ip ?? req.socket?.remoteAddress ?? '' → '' → 403
+
+  it('returns 403 when both req.ip and req.socket are undefined', () => {
+    const res = makeRes();
+    adminGuard({ ip: undefined, socket: undefined }, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('returns 403 when req.socket.remoteAddress is undefined and req.ip is undefined', () => {
+    const res = makeRes();
+    adminGuard({ ip: undefined, socket: { remoteAddress: undefined } }, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  // ── Non-local IPv4-mapped addresses ───────────────────────────────────────
+  // Source: ::ffff:10.0.0.1 → stripped to 10.0.0.1 → not local
+
+  it('returns 403 for ::ffff:10.0.0.1 (non-local IPv4-mapped)', () => {
+    const next = vi.fn();
+    const res  = makeRes();
+    adminGuard(makeReq('::ffff:10.0.0.1'), res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for ::ffff:192.168.1.1 (non-local IPv4-mapped LAN)', () => {
+    const res = makeRes();
+    adminGuard(makeReq('::ffff:192.168.1.1'), res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  // ── Whitespace in IP string ────────────────────────────────────────────────
+  // Source: exact string comparison — ' 127.0.0.1' !== '127.0.0.1'
+
+  it('returns 403 for " 127.0.0.1" (leading space)', () => {
+    const res = makeRes();
+    adminGuard(makeReq(' 127.0.0.1'), res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('returns 403 for "127.0.0.1 " (trailing space)', () => {
+    const res = makeRes();
+    adminGuard(makeReq('127.0.0.1 '), res, vi.fn());
     expect(res.status).toHaveBeenCalledWith(403);
   });
 });

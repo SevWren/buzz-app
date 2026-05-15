@@ -57,7 +57,10 @@ describe('GET /admin/history', () => {
     mockReadRecentMessages.mockResolvedValueOnce(fakeMessages);
     const res = await request(app).get('/admin/history');
     expect(res.body.messages).toHaveLength(1);
-    expect(res.body.messages[0].id).toBe('1');
+    // Assert full schema, not just one field
+    expect(res.body.messages[0]).toStrictEqual({
+      id: '1', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {},
+    });
   });
 
   it('calls readRecentMessages with argument 100', async () => {
@@ -70,5 +73,27 @@ describe('GET /admin/history', () => {
     mockReadRecentMessages.mockRejectedValueOnce(new Error('disk error'));
     const res = await request(app).get('/admin/history');
     expect(res.status).toBe(500);
+  });
+
+  it('returns { messages: [] } with status 200 when log returns empty array', async () => {
+    mockReadRecentMessages.mockResolvedValueOnce([]);
+    const res = await request(app).get('/admin/history');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ messages: [] });
+  });
+
+  it('passes through an array of multiple messages without truncation', async () => {
+    const msgs = Array.from({ length: 5 }, (_, i) => ({
+      id: String(i), ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {},
+    }));
+    mockReadRecentMessages.mockResolvedValueOnce(msgs);
+    const res = await request(app).get('/admin/history');
+    expect(res.body.messages).toHaveLength(5);
+  });
+
+  it('calls readRecentMessages exactly once per request', async () => {
+    mockReadRecentMessages.mockClear();
+    await request(app).get('/admin/history');
+    expect(mockReadRecentMessages).toHaveBeenCalledTimes(1);
   });
 });

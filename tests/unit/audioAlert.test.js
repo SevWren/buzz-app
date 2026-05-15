@@ -129,4 +129,66 @@ describe('playAlert', () => {
       expect.any(String),
     );
   });
+
+  // ── Path includes assets/ directory segment ───────────────────────────────
+
+  it('played file path includes the assets/ directory segment for "buzz"', async () => {
+    const playAlert = await getPlayAlert();
+    playAlert('buzz');
+    const [path] = mockPlay.mock.calls[0];
+    expect(path).toMatch(/[/\\]assets[/\\]buzz_chat_1\.mp3$/);
+  });
+
+  it('played file path includes the assets/ directory segment for "status"', async () => {
+    const playAlert = await getPlayAlert();
+    playAlert('status');
+    const [path] = mockPlay.mock.calls[0];
+    expect(path).toMatch(/[/\\]assets[/\\]buzz_chat_6\.mp3$/);
+  });
+
+  // ── Null / undefined / empty type ─────────────────────────────────────────
+  // Source: AUDIO_MAP[null/undefined/''] === undefined → !file → return early
+
+  it('does not throw and does not play for type null', async () => {
+    const playAlert = await getPlayAlert();
+    expect(() => playAlert(null)).not.toThrow();
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  it('does not throw and does not play for type undefined', async () => {
+    const playAlert = await getPlayAlert();
+    expect(() => playAlert(undefined)).not.toThrow();
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  it('does not throw and does not play for empty string type', async () => {
+    const playAlert = await getPlayAlert();
+    expect(() => playAlert('')).not.toThrow();
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  // ── quick-need with missing/invalid subtype ───────────────────────────────
+  // Source: AUDIO_MAP has no top-level 'quick-need' key — only 'quick-need:Pickup' etc.
+  // So fallback AUDIO_MAP['quick-need'] is also undefined → silent
+
+  it('does not play for quick-need with unknown subtype (no fallback key in AUDIO_MAP)', async () => {
+    const playAlert = await getPlayAlert();
+    playAlert('quick-need', 'InvalidSubtype');
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  it('does not play for quick-need with null subtype (key becomes "quick-need", no map entry)', async () => {
+    // null is falsy → key = 'quick-need' → AUDIO_MAP['quick-need'] === undefined → silent
+    const playAlert = await getPlayAlert();
+    playAlert('quick-need', null);
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  // ── Case sensitivity ──────────────────────────────────────────────────────
+
+  it('does not play for wrong-case type "Buzz" (AUDIO_MAP keys are lowercase)', async () => {
+    const playAlert = await getPlayAlert();
+    playAlert('Buzz');
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
 });
