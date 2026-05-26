@@ -114,6 +114,21 @@ Zod schema over `process.env`. Exports:
 
 If validation fails at startup, logs a field-level error and calls `process.exit(1)`.
 
+### `public/matrix.js`
+
+Matrix shutdown animation engine. Triggered by the `server-shutdown` Socket.IO event in `client.js`. Exports:
+- `class MatrixRain` — canvas rain engine with DPR-aware sizing, 60-frame pre-warm, and frame-rate-independent `dt`-based animation loop
+- `class GlitchSequencer` — 6-phase shutdown orchestrator (see `docs/matrix-shutdown.md` for full sequence timing)
+- `function randChar()` — weighted character selection (50% Katakana, 20% Latin, 20% digits, 10% symbols)
+
+Two canvas elements in `index.html`: `#matrix-rain-canvas` (rain layer, z-index 1000) and `#matrix-msg-canvas` (message layer, z-index 1001). SR live region: `#matrix-a11y`. `prefers-reduced-motion` is respected.
+
+The admin panel (`admin.js`) has its own shutdown handler — no matrix animation on Dad's panel.
+
+Debug hook: `window.__matrixTest()` available on localhost only (guarded at `client.js` lines 45–48). See `docs/matrix-shutdown.md`.
+
+Security implications of `server.js` middleware choices: see [`docs/security.md`](security.md).
+
 ---
 
 ## Data Flow Diagram
@@ -149,7 +164,28 @@ Node.js is single-threaded. All I/O is async (file writes, network). Key points:
 
 - `appendMessage` is async but **not awaited** in socket handlers. A log write failure never blocks or errors a client response.
 - `playAlert` is fire-and-forget — the callback from `player.play()` only logs errors.
-- Rate limiter state is in-memory Maps — no shared state across worker processes. If clustered, each worker has independent rate limits (acceptable for local-network use; not a concern for this app's scale).
+- Rate limiter state is in-memory Maps — no shared state across worker processes. This app is not clustered; see [ADR-0003](adr/0003-map-based-sliding-window-rate-limiting.md) for the full rationale.
+
+### Socket.IO configuration
+
+Key non-default parameters set in `src/server.js`:
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `transports` | `['websocket']` | Long-polling explicitly disabled. Reduces attack surface and eliminates polling overhead on LAN. Clients behind WebSocket-blocking proxies cannot connect — acceptable for home Wi-Fi. |
+| `maxHttpBufferSize` | 4 KB | The largest valid payload (500-char message) is ~560 bytes. 4 KB gives generous headroom while preventing memory exhaustion from oversized payloads. Default is 1 MB. |
+| `pingTimeout` | 5 s | Server waits 5 s for a ping response before declaring the connection dead. |
+| `pingInterval` | 25 s | Keepalive ping sent every 25 s. |
+| `upgradeTimeout` | 10 s | HTTP → WebSocket upgrade must complete within 10 s. |
+| `cookie` | `false` | Session cookies disabled. Auth is IP-based, not session-based (see [ADR-0005](adr/0005-two-layer-admin-auth.md)). |
+
+### Client reconnection
+
+`public/client.js` configures Socket.IO client reconnection:
+- `reconnectionAttempts: 10` — the client stops trying after 10 failed attempts. After this, the connection dot turns red and stays red. The user must refresh the page to reconnect.
+- `reconnectionDelayMax: 10_000` ms — maximum 10 s between attempts (exponential backoff capped here).
+
+Rate limit values for all socket events: see [`docs/security.md`](security.md#per-socket-rate-limiting) and [ADR-0003](adr/0003-map-based-sliding-window-rate-limiting.md).
 
 ---
 
@@ -183,4 +219,6 @@ Node.js is single-threaded. All I/O is async (file writes, network). Key points:
 5. `io.disconnectSockets(true)` — closes all WebSocket connections
 6. `httpServer.close(cb)` — stops accepting new connections; calls `cb` when drained
 7. `process.exit(0)` — clean exit
-8. Force-kill timeout at 10 s — `process.exit(1)` if close stalls
+8. Force-kill timeout at 10 s — `process.exit(1)` if `httpServer.close()` stalls (e.g. a keep-alive connection that does not drain). This ensures the process never hangs indefinitely.
+
+The 300 ms delay in step 4 is intentional: it gives the `server-shutdown` broadcast time to reach LAN Wi-Fi clients before their sockets are forcibly closed. The phone client uses this event to trigger the matrix shutdown animation (see `docs/matrix-shutdown.md`) before the WebSocket drops.

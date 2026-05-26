@@ -75,13 +75,15 @@ Tap this button to send your GPS coordinates to Dad.
 
 **Note:** Location sharing requires the browser to have permission. If you tapped Deny previously, go to your browser's site settings and re-allow location for this page.
 
+**Note on location freshness:** The browser may return a cached GPS fix up to 30 seconds old. If you need to send your exact real-time position, wait briefly and tap again.
+
 ---
 
 ### My Phone is Dying
 
 Send a battery warning so Dad knows your phone may go offline soon.
 
-- Shows your battery percentage if the browser can read it, or "unknown" if not
+- Shows your battery percentage if the browser supports the Battery Status API. On iOS Safari and some Firefox versions this API is unavailable — the alert still goes to Dad but the percentage shows as "unknown %"
 - Rate limited to 2 per 60 seconds
 
 ---
@@ -102,6 +104,7 @@ Dad's replies appear at the bottom of the page in the conversation thread. Your 
 - Replies show a read receipt ("Seen") once Dad views them in the admin panel
 - The thread scrolls automatically when new messages arrive
 - The thread shows the last 100 messages (loaded from the server on page open)
+- The thread displays a maximum of 200 messages at a time in your browser. When this cap is reached, the oldest bubble is removed as new ones arrive. This is display-only — the server log (`data/messages.jsonl`) retains all messages permanently.
 
 ---
 
@@ -214,3 +217,37 @@ To prevent accidental spam, each event type has a per-connection rate limit:
 | Reply (admin) | 20 per 5 seconds |
 
 When a rate limit is hit, the server sends back an error acknowledgement and the action is not processed. The phone UI will show the error message.
+
+Rate limiting is part of the overall security model — see [docs/security.md](security.md) for the full threat model and how rate limits fit into the protection strategy.
+
+---
+
+## Server Shutdown Animation
+
+When Dad shuts down the server (or the server stops for any reason), the son's phone displays a cinematic shutdown sequence rather than a plain disconnection error.
+
+**What the son sees:**
+
+1. The app UI desaturates and fades out over about 2.5 seconds
+2. A cascade of green Matrix-style characters fills the screen
+3. Three messages appear in sequence, each rippling in character by character:
+   - "CONNECTION LOST"
+   - "SERVER SHUTTING DOWN...."
+   - The server's final message — this one stays on screen permanently with a glowing, micro-flickering effect
+4. The green rain continues indefinitely until the page is refreshed
+
+The animation is purely visual — no audio plays. Refreshing the page reconnects to the server if it has restarted.
+
+**Admin panel:** Dad's admin panel does not show the animation. It displays a plain "[SYSTEM] Server shutting down" note in the conversation thread and disables the reply input.
+
+**Accessibility:** The animation respects `prefers-reduced-motion`. On devices with this setting enabled, the visual effects are suppressed and the messages are still announced via the screen reader.
+
+For full technical details, see [docs/matrix-shutdown.md](matrix-shutdown.md).
+
+---
+
+## See Also
+
+- [API Reference](api.md) — technical event payload specifications and exact response formats
+- [Security Model](security.md) — how the app protects against misuse
+- [Matrix Shutdown Animation](matrix-shutdown.md) — technical reference for the shutdown sequence

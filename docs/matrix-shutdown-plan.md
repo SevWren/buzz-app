@@ -1,5 +1,11 @@
 # Matrix Shutdown Experience — Design & Development Plan
 
+> **STATUS: IMPLEMENTED**
+>
+> This was the design specification for the matrix shutdown animation.
+> The feature is fully built in `public/matrix.js`.
+> For the current as-implemented reference, see **[docs/matrix-shutdown.md](matrix-shutdown.md)**.
+
 ## Overview
 
 `index.html` is renamed to `index.bak`. A new `index.html` and a new `public/matrix.js`

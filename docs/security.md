@@ -44,6 +44,28 @@ Validated constraints:
 - Log injection (control characters, ANSI escape sequences, newline injection)
 - Sensitive content written to disk (a long message payload in a structured log)
 
+#### Pino log redaction
+
+`src/lib/logger.js` configures Pino with a redaction list. The following field names are automatically replaced with `[Redacted]` in all log output, regardless of nesting depth:
+
+- `password`, `*.password`
+- `token`, `*.token`
+- `secret`, `*.secret`
+- `authorization`, `*.authorization`
+- `cookie`, `*.cookie`
+
+This prevents accidental credential exposure if future middleware passes request objects with auth headers to logger calls.
+
+#### Production log format
+
+In `NODE_ENV=production`, Pino outputs newline-delimited JSON — no colour, no pretty-printing. To read production logs:
+
+```bash
+npm start 2>&1 | npx pino-pretty     # human-readable while running
+npm start 2>&1 | jq .                # raw JSON filtering
+pm2 logs buzz-app | npx pino-pretty  # if running under PM2
+```
+
 ### XSS prevention via `textContent`
 
 Both `public/client.js` and `public/admin.js` use `element.textContent = value` exclusively when rendering user-supplied data. `innerHTML` is never used on untrusted content. This prevents cross-site scripting in the browser.
@@ -71,10 +93,25 @@ Before disconnecting clients, the server emits `server-shutdown` to all connecte
 
 ### Security headers via Helmet
 
-`helmet` is applied with all defaults except CSP (disabled — see below). This sets:
+`helmet` is applied with a full Content Security Policy scoped to what the app actually serves (configured in `src/server.js` lines 74–101):
+
+- `default-src 'self'` — all resources must come from the same origin
+- `script-src 'self'` — all JS loaded from same origin (including `/socket.io/socket.io.js`)
+- `style-src 'self' 'unsafe-inline'` — `'unsafe-inline'` is required because `index.html` and `admin.html` contain inline `<style>` blocks; there is no build step to extract them. This is the only permissive directive.
+- `connect-src 'self'` — covers Socket.IO WebSocket connections to the same origin (per CSP Level 3, `'self'` in `connect-src` covers `ws://` to the same host without needing explicit `ws:` wildcards)
+- `font-src 'self' data:` — allows the self-hosted ShareTechMono WOFF2 and inline data URIs
+- `img-src 'self' data:` — allows inline data URIs for any future image use
+- `object-src 'none'` — no plugins
+- `base-uri 'self'` — prevents base tag injection
+- `form-action 'self'` — no form submissions to external origins
+- `frame-ancestors 'none'` — prevents clickjacking
+- `worker-src 'none'` — no service workers or workers
+
+Additionally, a `Permissions-Policy` header disables browser features the app does not use: `camera`, `microphone`, `geolocation`, `payment`, `usb`, `interest-cohort`.
+
+Standard Helmet headers also active:
 - `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: SAMEORIGIN`
-- `X-XSS-Protection` (legacy browsers)
+- `X-Frame-Options: SAMEORIGIN` (redundant with `frame-ancestors 'none'` but kept for older browsers)
 - `Strict-Transport-Security` (only meaningful over HTTPS)
 - And others
 
@@ -90,13 +127,19 @@ Any device on the same Wi-Fi that knows the server's IP and port can send buzzes
 
 Traffic between the browser and server is unencrypted. On a trusted home Wi-Fi this is acceptable. On a public Wi-Fi or if exposing to the internet, use HTTPS (see Production Hardening).
 
-### CSP disabled
+### CSP `'unsafe-inline'` in `style-src`
 
-`helmet({ contentSecurityPolicy: false })` — Content Security Policy is disabled to avoid breaking the vanilla HTML/JS UI without a build step. For hardened deployments, configure a proper CSP.
+CSP is active (see "Security headers via Helmet" above). The one permissive directive is `'unsafe-inline'` in `style-src`, required because `index.html` and `admin.html` contain inline `<style>` blocks with no build step to extract them. This is a known limitation documented in `docs/tech-debt.md`. For hardened deployments, the path to removing it is either extracting styles to external `.css` files or adding per-element nonces (which requires server-side rendering).
 
 ### `CORS_ORIGIN=*`
 
 By default, any origin can make requests to the server. Acceptable for local-network use where the IP is not publicly routable. Restrict this in production.
+
+Valid values for `CORS_ORIGIN`:
+- `*` — wildcard, any origin (default, acceptable for home networks)
+- An exact origin: must match the pattern `^https?://[^/]+$` — a full scheme + host + optional port, no trailing slash, no path. Examples: `http://192.168.1.50:3000`, `https://myapp.local`
+
+Note: `CORS_ORIGIN` has no `.trim()` in the Zod schema (intentional — whitespace in a CORS origin is almost always a typo). A value with leading or trailing whitespace will fail validation and the server will exit with a config error.
 
 ### No persistent admin session / token
 
@@ -128,6 +171,17 @@ If you ever expose Buzz App to the internet or a less-trusted network:
 6. **Restrict the admin panel** — consider an additional authentication layer (Basic Auth, mTLS, VPN) rather than relying on IP-based localhost check when not on the same machine.
 
 7. **Log rotation** — `data/messages.jsonl` grows indefinitely. Set up logrotate or a cron job to archive or truncate it periodically.
+
+---
+
+---
+
+## See Also
+
+- [Architecture overview](architecture.md) — module responsibilities and request flow
+- [ADR-0005: Two-layer admin auth](adr/0005-two-layer-admin-auth.md) — rationale for the two-layer approach
+- [ADR-0006: Vanilla frontend](adr/0006-vanilla-frontend-no-build-step.md) — why `'unsafe-inline'` is required in `style-src`
+- [Documentation index](index.md)
 
 ---
 
