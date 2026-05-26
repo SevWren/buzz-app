@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "doc-maintenance": {
+      "source": "nickcrew/claude-ctx-plugin",
+      "sourceType": "github",
+      "skillPath": "skills/doc-maintenance/SKILL.md",
+      "computedHash": "94a2efeced98bcfa2266e275fc10fb1af4a9a19b1436cfd6a65eb79ab9324b0e"
+    },
+    "grill-me": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grill-me/SKILL.md",
+      "computedHash": "784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea"
+    }
+  }
+}

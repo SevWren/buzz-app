@@ -208,3 +208,44 @@ Each record in `data/messages.jsonl` is a JSON object on one line:
 - CSS class injection is prevented in `client.js` by validating `type` against a `VALID_LOG_TYPES` Set before applying as a class name.
 - Admin access uses two independent checks (HTTP middleware + Socket.IO middleware) so neither can be bypassed independently.
 - `data/messages.jsonl` is in `.gitignore` — never committed.
+
+## Agent Skills Setup
+
+All agent skills are mirrored in `.claude/skills/`. After cloning, install them so your AI agent can invoke them directly:
+
+```bash
+# Install all skills in one pass
+npx skills add wshobson/agents@architecture-decision-records
+npx skills add anthropics/knowledge-work-plugins@tech-debt
+npx skills add aj-geddes/useful-ai-prompts@nodejs-express-server
+npx skills add nickcrew/claude-ctx-plugin@doc-maintenance
+npx skills add patricio0312rev/skills@eslint-prettier-config
+npx skills add aj-geddes/useful-ai-prompts@real-time-features
+npx skills add mcollina/skills@node
+npx skills add mindrally/skills@zod-schema-validation
+npx skills add aj-geddes/useful-ai-prompts@rate-limiting-implementation
+npx skills add onewave-ai/claude-skills@dependency-auditor
+npx skills add block/agent-skills@code-review
+npx skills add https://github.com/mattpocock/skills --skill grill-me
+npx skills add https://github.com/pbakaus/impeccable --skill impeccable
+```
+
+### Skill Reference
+
+| Skill | Category | Purpose |
+|-------|----------|---------|
+| `architecture-decision-records` | Project health | Document architectural decisions (why Socket.IO, why JSONL, etc.) |
+| `tech-debt` | Project health | Identify and prioritize technical debt |
+| `doc-maintenance` | Project health | Keep docs fresh and in sync with code changes |
+| `code-review` | Project health | Structured code review for security-sensitive PRs |
+| `dependency-auditor` | Project health | Audit npm deps for vulnerabilities and staleness |
+| `nodejs-express-server` | Runtime | Express 5 patterns and best practices |
+| `node` | Runtime | Advanced Node.js patterns (by Matteo Collina, Node core contributor) |
+| `real-time-features` | Runtime | Socket.IO and WebSocket implementation patterns |
+| `zod-schema-validation` | Runtime | Advanced Zod validation patterns (used throughout `src/handlers/socket.js`) |
+| `rate-limiting-implementation` | Runtime | Rate limiting patterns (used in both HTTP and Socket.IO layers) |
+| `eslint-prettier-config` | Tooling | ESLint 9 flat config and Prettier setup |
+| `grill-me` | Tooling | Stress-test your own assumptions and design decisions |
+| `impeccable` | Tooling | Frontend UI review, critique, audit, and polish (`/impeccable clarify`, `/impeccable audit`, `/impeccable critique`) |
+
+> **Note:** `impeccable` covers `clarify`, `audit`, and `critique` as sub-commands of a single skill — invoke them as `/impeccable clarify`, `/impeccable audit`, or `/impeccable critique`.
