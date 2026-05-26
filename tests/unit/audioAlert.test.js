@@ -125,11 +125,12 @@ describe('playAlert', () => {
     mockPlay.mockImplementationOnce((_path, cb) => cb(new Error('no player')));
     expect(() => playAlert('buzz')).not.toThrow();
     // Source: logger.warn({ err, type, file }, 'audioAlert: playback failed — ...')
+    // BUG-29 fix: logger.warn now uses { errMessage, errCode } instead of raw { err }
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        err:  expect.any(Error),
-        type: 'buzz',
-        file: 'buzz_chat_1.mp3',
+        errMessage: 'no player',
+        type:       'buzz',
+        file:       'buzz_chat_1.mp3',
       }),
       'audioAlert: playback failed — install afplay (macOS), aplay/mpg123 (Linux), or mplayer (Windows)',
     );

@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./tests/setup.js'],
+    // Exclude skill-installer directories — npx skills add writes asset test files
+    // (e.g. graceful-server.test.ts) inside the project root which Vitest picks up
+    // by default, producing "No test suite found" failures (BUG-13).
+    exclude: ['**/node_modules/**', '.agents/**', '.claude/**'],
     // Default 5 s is tight for socket integration tests that open real TCP
     // connections.  10 s keeps CI fast while absorbing transient I/O delays.
     testTimeout: 10_000,

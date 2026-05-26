@@ -42,8 +42,10 @@ export function playAlert(type, subtype) {
   const filePath = join(ASSETS_DIR, file);
   player.play(filePath, (err) => {
     if (err) {
+      // BUG-29: log only message/code — never the raw err object which may contain
+      // filesystem paths in its stack trace (consistent with messageLog.js pattern).
       logger.warn(
-        { err, type, file },
+        { errMessage: err?.message, errCode: err?.code, type, file },
         'audioAlert: playback failed — install afplay (macOS), aplay/mpg123 (Linux), or mplayer (Windows)',
       );
     }

@@ -23,7 +23,11 @@ function readEnvValue(filePath, key) {
   if (!existsSync(filePath)) return undefined;
   for (const line of readFileSync(filePath, 'utf8').split('\n')) {
     const match = line.match(/^\s*([^#=\s]+)\s*=\s*(.*?)\s*$/);
-    if (match && match[1] === key) return match[2].replace(/^["']|["']$/g, '');
+    if (match && match[1] === key) {
+      const raw = match[2];
+      // BUG-28: only strip matched quote pairs (e.g. "val" or 'val'), not mismatched ones
+      return (/^(['"])(.*)\1$/.test(raw)) ? raw.slice(1, -1) : raw.trim();
+    }
   }
   return undefined;
 }

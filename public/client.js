@@ -119,10 +119,14 @@ msgInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendMessage();
 });
 
+// BUG-26: validate data-need before emission — server Zod catches invalid values,
+// but client-side check prevents round-trips and a manipulated DOM from sending junk.
+const VALID_NEEDS = new Set(['Pickup', 'Food', 'Money', 'Call Me', 'Help']);
 // Quick Need
 for (const btn of quickNeedBtns) {
   btn.addEventListener('click', () => {
     const need = btn.dataset.need;
+    if (!VALID_NEEDS.has(need)) return;
     socket.emit('quick-need', { need }, (resp) => {
       if (!resp?.ok) addErrorBubble(resp?.error ?? 'Failed to send.');
     });
@@ -131,11 +135,17 @@ for (const btn of quickNeedBtns) {
   });
 }
 
+// BUG-27: validate data-emoji/data-label pairs before emission
+const VALID_STATUS_PAIRS = new Map([
+  ['😴', 'Tired'], ['🍔', 'Hungry'], ['🏫', 'At School'],
+  ['🏠', 'Heading Home'], ['✅', 'All Good'], ['😢', 'Upset'],
+]);
 // Status Stamp
 for (const btn of statusBtns) {
   btn.addEventListener('click', () => {
     const emoji = btn.dataset.emoji;
     const label = btn.dataset.label;
+    if (VALID_STATUS_PAIRS.get(emoji) !== label) return;
     socket.emit('set-status', { emoji, label }, (resp) => {
       if (!resp?.ok) addErrorBubble(resp?.error ?? 'Failed to send.');
     });
@@ -169,7 +179,7 @@ btnLocation.addEventListener('click', () => {
       };
       addErrorBubble(GEO_ERRORS[err.code] ?? `Location error (code ${err.code}).`);
     },
-    { timeout: 10_000, maximumAge: 30_000 },
+    { timeout: 10_000, maximumAge: 0 }, // BUG-24: maximumAge:0 ensures fresh position (was 30s stale)
   );
 });
 
@@ -222,7 +232,9 @@ btnClearThread.addEventListener('click', () => {
 
 // ── Server shutdown — Matrix takeover ────────────────────────────────────────
 socket.on('server-shutdown', ({ message }) => {
-  // Remove all socket listeners to prevent reconnect side-effects
+  // BUG-21: remove this listener first so a double-emit can't trigger the sequence twice
+  socket.off('server-shutdown');
+  // Remove all other socket listeners to prevent reconnect side-effects
   socket.off('connect');
   socket.off('disconnect');
   socket.off('connect_error');

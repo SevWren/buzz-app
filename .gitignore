@@ -8,3 +8,6 @@ coverage/
 public/*.bak
 public/*.original
 public/*.tmp
+# Agent skill directories — injected by `npx skills add`, not project source (BUG-13)
+.agents/
+.claude/

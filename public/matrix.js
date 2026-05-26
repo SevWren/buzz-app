@@ -60,16 +60,23 @@ export class MatrixRain {
     this._spikeNext = 50;     // frames until next random glow spike
     this._frame     = 0;
     this._baseFont  = `${FONT_SIZE}px "Share Tech Mono", "Courier New", monospace`;
+    // BUG-18: store bound handler so it can be removed via removeEventListener
+    this._onResize  = () => this._resize();
   }
 
   async start() {
     // Gate on font availability — silent fallback if font load fails (audit #36)
     try { await document.fonts.load(this._baseFont); } catch (_) { /* use fallback */ }
     this._resize();
-    window.addEventListener('resize', () => this._resize());
+    window.addEventListener('resize', this._onResize); // BUG-18: named ref
     // Pre-warm: 60 simulated frames so streams have realistic decay trails
     // before the canvas becomes visible (audit #15, #17)
     this._prewarm(60);
+  }
+
+  destroy() {
+    window.removeEventListener('resize', this._onResize);
+    this.stop();
   }
 
   startLoop() {
@@ -323,9 +330,19 @@ export class GlitchSequencer {
     this._W       = window.innerWidth;
     this._H       = window.innerHeight;
     this._dpr     = window.devicePixelRatio || 1;
+    // BUG-19: store bound handler so it can be removed via removeEventListener
+    this._onResize = () => this._setupMsgCanvas();
+    // BUG-10: cycle token — incremented on each _showMessage call to invalidate stale timeouts
+    this._cycleId  = 0;
 
     this._setupMsgCanvas();
-    window.addEventListener('resize', () => this._setupMsgCanvas());
+    window.addEventListener('resize', this._onResize); // BUG-19: named ref
+  }
+
+  destroy() {
+    window.removeEventListener('resize', this._onResize);
+    this._rain.destroy();
+    if (this._msgRaf) { cancelAnimationFrame(this._msgRaf); this._msgRaf = null; }
   }
 
   // forceAnimation: true bypasses prefers-reduced-motion (used by __matrixTest)
@@ -392,6 +409,13 @@ export class GlitchSequencer {
     this._mCanvas.style.height = H + 'px';
     const ctx = this._mCtx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // BUG-20: if a sequence is active, recompute character positions for the new viewport
+    // so text re-centers instead of rendering at stale pixel coordinates.
+    if (this._phase === 'running' && this._chars.length > 0) {
+      const text = this._chars.map(c => c.finalChar).join('');
+      this._chars = this._computeLayout(text);
+    }
   }
 
   _startMsgLoop() {
@@ -474,7 +498,14 @@ export class GlitchSequencer {
       const saved         = ch.finalChar;
       ch.currentChar      = randChar();
       ch.flashT           = 0.35;
-      setTimeout(() => { ch.currentChar = saved; ch.flashT = 0; }, 33);
+      // BUG-10: capture cycleId so the timeout only reverts if the same message
+      // phase is still active — prevents stale closures overwriting a new message's chars.
+      const activeCycle = this._cycleId;
+      setTimeout(() => {
+        if (this._cycleId !== activeCycle) return; // message transitioned — skip revert
+        ch.currentChar = saved;
+        ch.flashT      = 0;
+      }, 33);
     }
   }
 
@@ -598,6 +629,10 @@ export class GlitchSequencer {
   async _showMessage(text, hold) {
     // Update SR-only live region (audit #19)
     if (this._a11y) this._a11y.textContent = text;
+
+    // BUG-10: increment cycle token so any pending micro-glitch timeouts from the
+    // previous message phase will no longer match and will skip their revert.
+    this._cycleId++;
 
     const chars = this._computeLayout(text);
     this._chars = chars;

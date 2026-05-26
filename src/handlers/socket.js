@@ -16,10 +16,16 @@ const QuickNeedSchema = z.object({
   need: z.enum(['Pickup', 'Food', 'Money', 'Call Me', 'Help']),
 });
 
-const StatusSchema = z.object({
-  emoji: z.enum(['😴', '🍔', '🏫', '🏠', '✅', '😢']),
-  label: z.enum(['Tired', 'Hungry', 'At School', 'Heading Home', 'All Good', 'Upset']),
-});
+// BUG-08: validate emoji+label as atomic pairs — independent enums accepted mismatches
+// (e.g. { emoji:'😴', label:'Hungry' }) which stores and broadcasts semantically invalid status.
+const StatusSchema = z.union([
+  z.object({ emoji: z.literal('😴'), label: z.literal('Tired') }),
+  z.object({ emoji: z.literal('🍔'), label: z.literal('Hungry') }),
+  z.object({ emoji: z.literal('🏫'), label: z.literal('At School') }),
+  z.object({ emoji: z.literal('🏠'), label: z.literal('Heading Home') }),
+  z.object({ emoji: z.literal('✅'), label: z.literal('All Good') }),
+  z.object({ emoji: z.literal('😢'), label: z.literal('Upset') }),
+]);
 
 const LocationSchema = z.object({
   lat:      z.number().min(-90).max(90),
@@ -49,8 +55,9 @@ const QUICK_LIMIT    = { windowMs: 10_000, max: 10 };
 const STATUS_LIMIT   = { windowMs: 10_000, max:  5 };
 const LOCATION_LIMIT = { windowMs: 30_000, max:  3 };
 const BATTERY_LIMIT  = { windowMs: 60_000, max:  2 };
-const COUNTDOWN_LIMIT= { windowMs: 10_000, max:  5 };
-const REPLY_LIMIT    = { windowMs:  5_000, max: 20 };
+const COUNTDOWN_LIMIT  = { windowMs: 10_000, max:  5 };
+const REPLY_LIMIT      = { windowMs:  5_000, max: 20 };
+const MARK_READ_LIMIT  = { windowMs:  5_000, max: 10 }; // BUG-22: admin-mark-read rate limit
 
 function makeRateLimiter() {
   // Map<socketId, { count: number, resetAt: number }>
@@ -77,8 +84,9 @@ const quickLimiter    = makeRateLimiter();
 const statusLimiter   = makeRateLimiter();
 const locationLimiter = makeRateLimiter();
 const batteryLimiter  = makeRateLimiter();
-const countdownLimiter= makeRateLimiter();
-const replyLimiter    = makeRateLimiter();
+const countdownLimiter  = makeRateLimiter();
+const replyLimiter      = makeRateLimiter();
+const markReadLimiter   = makeRateLimiter(); // BUG-22
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -119,18 +127,24 @@ export function registerSocketHandlers(io) {
     );
 
     // ── buzz-dad ─────────────────────────────────────────────────────────────
-    socket.on('buzz-dad', () => {
+    // BUG-05/06: handler now accepts (_data, callback) so Socket.IO ack is resolved.
+    // All return paths call callback() to prevent ack tracker memory leaks.
+    socket.on('buzz-dad', (_data, callback) => {
       if (buzzLimiter.isLimited(socket.id, BUZZ_LIMIT)) {
         logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'buzz-dad rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many buzzes.' });
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
       }
 
       logger.info({ socketId: socket.id }, 'Buzz received');
       playAlert('buzz');
       appendMessage({ direction: 'in', type: 'buzz', socketId: socket.id, payload: {} });
-      io.emit('incoming-message', buildIncomingMsg('buzz', {}));
+      const buzzMsg = buildIncomingMsg('buzz', {});
+      io.to('admin').emit('incoming-message', buzzMsg);
+      socket.emit('incoming-message', buzzMsg);
       socket.emit('ack', { type: 'buzz', message: 'Buzz received — Dad has been alerted!' });
+      if (typeof callback === 'function') callback({ ok: true });
     });
 
     // ── send-message ──────────────────────────────────────────────────────────
@@ -156,7 +170,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'Message received');
       playAlert('message');
       appendMessage({ direction: 'in', type: 'message', socketId: socket.id, payload: { text } });
-      io.emit('incoming-message', buildIncomingMsg('message', { text }));
+      const msgMsg = buildIncomingMsg('message', { text });
+      io.to('admin').emit('incoming-message', msgMsg);
+      socket.emit('incoming-message', msgMsg);
       socket.emit('ack', { type: 'message', message: `Server received: "${text}"` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -183,7 +199,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'quick-need received');
       playAlert('quick-need', need);
       appendMessage({ direction: 'in', type: 'quick-need', socketId: socket.id, payload: { need } });
-      io.emit('incoming-message', buildIncomingMsg('quick-need', { need }));
+      const quickMsg = buildIncomingMsg('quick-need', { need });
+      io.to('admin').emit('incoming-message', quickMsg);
+      socket.emit('incoming-message', quickMsg);
       socket.emit('ack', { type: 'quick-need', message: `Need sent: ${need}` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -210,7 +228,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'set-status received');
       playAlert('status');
       appendMessage({ direction: 'in', type: 'status', socketId: socket.id, payload: { emoji, label } });
-      io.emit('incoming-message', buildIncomingMsg('status', { emoji, label }));
+      const statusMsg = buildIncomingMsg('status', { emoji, label });
+      io.to('admin').emit('incoming-message', statusMsg);
+      socket.emit('incoming-message', statusMsg);
       socket.emit('ack', { type: 'status', message: `Status set: ${emoji} ${label}` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -237,7 +257,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'location-ping received');
       playAlert('location');
       appendMessage({ direction: 'in', type: 'location', socketId: socket.id, payload: { lat, lng, accuracy } });
-      io.emit('incoming-message', buildIncomingMsg('location', { lat, lng, accuracy }));
+      const locMsg = buildIncomingMsg('location', { lat, lng, accuracy });
+      io.to('admin').emit('incoming-message', locMsg);
+      socket.emit('incoming-message', locMsg);
       socket.emit('ack', { type: 'location', message: 'Location sent to Dad.' });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -264,7 +286,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'battery-low received');
       playAlert('battery-low');
       appendMessage({ direction: 'in', type: 'battery-low', socketId: socket.id, payload: { level } });
-      io.emit('incoming-message', buildIncomingMsg('battery-low', { level }));
+      const battMsg = buildIncomingMsg('battery-low', { level });
+      io.to('admin').emit('incoming-message', battMsg);
+      socket.emit('incoming-message', battMsg);
       const pct = level !== null ? `${Math.round(level * 100)}%` : 'unknown';
       socket.emit('ack', { type: 'battery-low', message: `Battery alert sent (${pct}).` });
       if (typeof callback === 'function') callback({ ok: true });
@@ -292,7 +316,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'countdown-start received');
       playAlert('countdown');
       appendMessage({ direction: 'in', type: 'countdown', socketId: socket.id, payload: { minutes } });
-      io.emit('incoming-message', buildIncomingMsg('countdown', { minutes }));
+      const cdMsg = buildIncomingMsg('countdown', { minutes });
+      io.to('admin').emit('incoming-message', cdMsg);
+      socket.emit('incoming-message', cdMsg);
       socket.emit('ack', { type: 'countdown', message: `Countdown started: ${minutes} min.` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -340,7 +366,14 @@ export function registerSocketHandlers(io) {
     // ── admin-mark-read (admin only) ──────────────────────────────────────────
     socket.on('admin-mark-read', (data, callback) => {
       if (socket.data?.isAdmin !== true) {
+        // BUG-07: emit ack on unauthorized — mirrors send-reply behaviour for consistency
+        socket.emit('ack', { type: 'error', message: 'Unauthorized.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
+        return;
+      }
+      // BUG-22: rate limit to prevent flooding all clients with messages-read broadcasts
+      if (markReadLimiter.isLimited(socket.id, MARK_READ_LIMIT)) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
       }
       logger.info({ socketId: socket.id }, 'admin-mark-read received');
@@ -359,6 +392,7 @@ export function registerSocketHandlers(io) {
       batteryLimiter.remove(socket.id);
       countdownLimiter.remove(socket.id);
       replyLimiter.remove(socket.id);
+      markReadLimiter.remove(socket.id); // BUG-22
       logger.info({ socketId: socket.id, address: socket.handshake?.address, reason }, 'Client disconnected');
     });
 
