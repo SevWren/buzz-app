@@ -145,23 +145,23 @@ async function loadHistory() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // BUG-33: build all bubbles into a DocumentFragment then replace in one operation.
-    // This prevents the browser from painting an intermediate empty thread.
+    // Clear the thread BEFORE calling addBubble so stale DOM from the previous
+    // session is not preserved. No intermediate empty paint occurs because
+    // textContent='' and all addBubble calls below are synchronous — the browser
+    // can only repaint between JS tasks (i.e. after an await), and there is none
+    // between the clear and the final addBubble call.
+    threadList.textContent = '';
     readReceiptMap.clear();
-    const frag = document.createDocumentFragment();
+
     if (data.messages.length === 0) {
-      frag.appendChild(threadEmpty);
+      threadList.appendChild(threadEmpty);
     } else {
       // readRecentMessages returns oldest-first — render in that order
       for (const msg of data.messages) {
         addBubble(msg, { skipScroll: true });
       }
-      // Drain threadList into the fragment for a single atomic appendChild below
-      while (threadList.firstChild) frag.appendChild(threadList.firstChild);
     }
-    // Single DOM mutation: clear + repopulate in one paint frame
-    threadList.textContent = '';
-    threadList.appendChild(frag);
+
     // Flush any live messages that arrived while the fetch was in-flight
     for (const msg of pendingLive) {
       addBubble(msg);
