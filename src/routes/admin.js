@@ -9,8 +9,21 @@ const __dirname  = dirname(__filename);
 
 const router = Router();
 
-// Every route under /admin requires localhost
+// BUG-30: CSRF mitigation — reject requests with a cross-origin Sec-Fetch-Site header.
+// Sec-Fetch-Site is sent by all modern browsers and cannot be forged by JS.
+// 'none' covers direct navigation; 'same-origin' covers normal same-origin fetch.
+// Older browsers that don't send the header pass through (undefined → falsy → no block).
+function csrfGuard(req, res, next) {
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') {
+    return res.status(403).json({ error: 'Cross-origin requests are not permitted.' });
+  }
+  next();
+}
+
+// Every route under /admin requires localhost + same-origin fetch
 router.use(adminGuard);
+router.use(csrfGuard);
 
 /**
  * GET /admin

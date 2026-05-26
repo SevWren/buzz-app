@@ -145,18 +145,23 @@ async function loadHistory() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // Clear thread and re-render (handles reconnect correctly)
-    threadList.innerHTML = '';
+    // BUG-33: build all bubbles into a DocumentFragment then replace in one operation.
+    // This prevents the browser from painting an intermediate empty thread.
     readReceiptMap.clear();
-
+    const frag = document.createDocumentFragment();
     if (data.messages.length === 0) {
-      threadList.appendChild(threadEmpty);
+      frag.appendChild(threadEmpty);
     } else {
       // readRecentMessages returns oldest-first — render in that order
       for (const msg of data.messages) {
         addBubble(msg, { skipScroll: true });
       }
+      // Drain threadList into the fragment for a single atomic appendChild below
+      while (threadList.firstChild) frag.appendChild(threadList.firstChild);
     }
+    // Single DOM mutation: clear + repopulate in one paint frame
+    threadList.textContent = '';
+    threadList.appendChild(frag);
     // Flush any live messages that arrived while the fetch was in-flight
     for (const msg of pendingLive) {
       addBubble(msg);
@@ -257,15 +262,8 @@ function formatPayload(type, payload) {
     case 'buzz':        return '🔔 Buzz!';
     case 'quick-need':  return `🚨 Needs: ${payload.need}`;
     case 'status':      return `${payload.emoji} ${payload.label}`;
-    case 'location': {
-      // Null guard: payload fields may be missing if the record was corrupted.
-      // toFixed() throws TypeError on null/undefined — use optional chaining.
-      const latStr = payload.lat?.toFixed?.(5) ?? payload.lat ?? '?';
-      const lngStr = payload.lng?.toFixed?.(5) ?? payload.lng ?? '?';
-      const acc    = payload.accuracy != null ? `±${Math.round(payload.accuracy)}m` : '';
-      // Handled specially in addBubble to render a clickable <a> link
-      return `📍 ${latStr}, ${lngStr} ${acc}`.trimEnd();
-    }
+    // 'location' is handled in addBubble (renders a clickable Maps link) and never
+    // reaches formatPayload — this case is intentionally omitted (BUG-25 dead code removed)
     case 'battery-low':
       return `🔋 Battery Low: ${payload.level !== null ? Math.round(payload.level * 100) + '%' : 'unknown'}`;
     case 'countdown':   return `⏱ I'll be ready in ${payload.minutes} min`;

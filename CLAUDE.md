@@ -194,14 +194,14 @@ Each record in `data/messages.jsonl` is a JSON object on one line:
 - **Hardening notes:**
   - `errorHandler` status sanitization: only `Number.isInteger(raw) && raw >= 400 && raw <= 599` is valid — NaN/strings/out-of-range all fall back to 500.
   - `appendMessage` is fire-and-forget in socket handlers — rejections are caught internally, never surfaced to the client.
-  - `readRecentMessages(0)` returns ALL records — `slice(-0) === slice(0)` in JS.
+  - `readRecentMessages(0)` returns `[]` — guarded by `if (limit === 0) return []` (previously `slice(-0)` returned all records; fixed in audit BUG-03).
   - `adminGuard` uses exact string comparison after stripping `::ffff:` — whitespace in IP strings blocks access.
   - `AUDIO_MAP` has no top-level `'quick-need'` key — only `'quick-need:Subtype'` entries. `playAlert('quick-need', null)` is silent.
-  - `CORS_ORIGIN` schema has no `.trim()` — whitespace-only values pass `.min(1)` (intentional for CORS use case).
+  - `CORS_ORIGIN` schema has no `.trim()` but whitespace-only values are still rejected by the `.refine()` regex (must be `'*'` or a valid `http/https` origin). The missing `.trim()` is intentional — trimming a URI value could mask a misconfiguration.
 
 ## Security Notes
 
-- CSP is disabled via `helmet({ contentSecurityPolicy: false })` — tighten for production.
+- CSP is enabled with a scoped policy (`defaultSrc 'self'`, `scriptSrc 'self'`, `styleSrc 'self' 'unsafe-inline'`, `connectSrc 'self'`, `frameAncestors 'none'`). The old `contentSecurityPolicy: false` comment is no longer accurate.
 - `app.set('trust proxy', 1)` is commented out — uncomment when behind nginx/Caddy so rate limiting uses the real client IP.
 - `CORS_ORIGIN=*` is acceptable for local-network use only.
 - `textContent` is used exclusively for rendering user data in both `client.js` and `admin.js` — no `innerHTML` on untrusted data.

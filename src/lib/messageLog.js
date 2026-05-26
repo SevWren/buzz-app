@@ -57,10 +57,14 @@ export async function appendMessage(record) {
     ? record.type.slice(0, MAX_FIELD_LEN)      : '';
   const socketId  = typeof record.socketId  === 'string'
     ? record.socketId.slice(0, MAX_FIELD_LEN)  : '';
-  const payload   =
+  // BUG-31: cap payload size to prevent oversized objects from writing unbounded JSONL entries.
+  // 4 KB is well above any legitimate payload (largest: 500-char message ≈ 520 bytes).
+  const MAX_PAYLOAD_BYTES = 4096;
+  let rawPayload =
     record.payload !== null && typeof record.payload === 'object'
       ? record.payload
       : {};
+  const payload = JSON.stringify(rawPayload).length <= MAX_PAYLOAD_BYTES ? rawPayload : {};
 
   const line =
     JSON.stringify({
