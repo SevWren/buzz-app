@@ -211,10 +211,10 @@ Each record in `data/messages.jsonl` is a JSON object on one line:
 
 ## Agent Skills Setup
 
-All agent skills are mirrored in `.claude/skills/`. After cloning, install them so your AI agent can invoke them directly:
+All agent skills are mirrored in `.claude/skills/` and `.agents/skills/`. After cloning, install them so your AI agent can invoke them directly:
 
 ```bash
-# Install all skills in one pass
+# ── Third-party skills ──────────────────────────────────────────────────────
 npx skills add wshobson/agents@architecture-decision-records
 npx skills add anthropics/knowledge-work-plugins@tech-debt
 npx skills add aj-geddes/useful-ai-prompts@nodejs-express-server
@@ -226,26 +226,120 @@ npx skills add mindrally/skills@zod-schema-validation
 npx skills add aj-geddes/useful-ai-prompts@rate-limiting-implementation
 npx skills add onewave-ai/claude-skills@dependency-auditor
 npx skills add block/agent-skills@code-review
-npx skills add https://github.com/mattpocock/skills --skill grill-me
 npx skills add https://github.com/pbakaus/impeccable --skill impeccable
+
+# ── Matt Pocock skills (engineering) ────────────────────────────────────────
+npx skills add https://github.com/mattpocock/skills --skill diagnose
+npx skills add https://github.com/mattpocock/skills --skill grill-with-docs
+npx skills add https://github.com/mattpocock/skills --skill improve-codebase-architecture
+npx skills add https://github.com/mattpocock/skills --skill prototype
+npx skills add https://github.com/mattpocock/skills --skill setup-matt-pocock-skills
+npx skills add https://github.com/mattpocock/skills --skill tdd
+npx skills add https://github.com/mattpocock/skills --skill to-issues
+npx skills add https://github.com/mattpocock/skills --skill to-prd
+npx skills add https://github.com/mattpocock/skills --skill triage
+npx skills add https://github.com/mattpocock/skills --skill zoom-out
+
+# ── Matt Pocock skills (productivity) ───────────────────────────────────────
+npx skills add https://github.com/mattpocock/skills --skill caveman
+npx skills add https://github.com/mattpocock/skills --skill grill-me
+npx skills add https://github.com/mattpocock/skills --skill handoff
+npx skills add https://github.com/mattpocock/skills --skill write-a-skill
+
+# ── Matt Pocock skills (misc — copy manually; not in CLI manifest) ───────────
+# These four are in skills/misc/ but not indexed by `npx skills`. Install by
+# copying their SKILL.md files from .claude/skills/ into .claude/skills/ directly,
+# or re-run the post-clone setup script if one is added in the future.
+# Files are already committed under .claude/skills/git-guardrails-claude-code/,
+# .claude/skills/migrate-to-shoehorn/, .claude/skills/scaffold-exercises/,
+# and .claude/skills/setup-pre-commit/.
 ```
+
+> **One-time setup:** After installing the CLI skills above, run `/setup-matt-pocock-skills`
+> once per repo to configure the issue tracker, triage label vocabulary, and domain doc
+> layout that the engineering skills (`to-issues`, `triage`, `diagnose`, etc.) depend on.
+
+---
 
 ### Skill Reference
 
-| Skill | Category | Purpose |
-|-------|----------|---------|
-| `architecture-decision-records` | Project health | Document architectural decisions (why Socket.IO, why JSONL, etc.) |
-| `tech-debt` | Project health | Identify and prioritize technical debt |
-| `doc-maintenance` | Project health | Keep docs fresh and in sync with code changes |
-| `code-review` | Project health | Structured code review for security-sensitive PRs |
-| `dependency-auditor` | Project health | Audit npm deps for vulnerabilities and staleness |
-| `nodejs-express-server` | Runtime | Express 5 patterns and best practices |
-| `node` | Runtime | Advanced Node.js patterns (by Matteo Collina, Node core contributor) |
-| `real-time-features` | Runtime | Socket.IO and WebSocket implementation patterns |
-| `zod-schema-validation` | Runtime | Advanced Zod validation patterns (used throughout `src/handlers/socket.js`) |
-| `rate-limiting-implementation` | Runtime | Rate limiting patterns (used in both HTTP and Socket.IO layers) |
-| `eslint-prettier-config` | Tooling | ESLint 9 flat config and Prettier setup |
-| `grill-me` | Tooling | Stress-test your own assumptions and design decisions |
-| `impeccable` | Tooling | Frontend UI review, critique, audit, and polish (`/impeccable clarify`, `/impeccable audit`, `/impeccable critique`) |
+#### Third-Party Skills
 
-> **Note:** `impeccable` covers `clarify`, `audit`, and `critique` as sub-commands of a single skill — invoke them as `/impeccable clarify`, `/impeccable audit`, or `/impeccable critique`.
+| Skill | Invoke | When to use |
+|-------|--------|-------------|
+| `architecture-decision-records` | `/architecture-decision-records` | Document a significant technical decision — why Socket.IO over raw WebSocket, why JSONL, etc. Run whenever a major design choice is made or revisited. |
+| `tech-debt` | `/tech-debt` | Identify, categorize, and prioritize technical debt. Run periodically (e.g. before a sprint) or after adding a workaround. |
+| `doc-maintenance` | `/doc-maintenance` | Keep docs fresh and in sync with code. Run after features, refactors, or dependency upgrades. |
+| `code-review` | `/code-review` | Structured security-aware PR review checklist. Run before merging any change that touches auth, crypto, or external inputs. |
+| `dependency-auditor` | `/dependency-auditor` | Audit npm deps for CVEs, outdated packages, and unused deps. Run before releases or when `npm audit` flags issues. |
+| `nodejs-express-server` | `/nodejs-express-server` | Express 5 patterns and best practices — middleware ordering, async error handling, routing. Reference when adding new routes or middleware. |
+| `node` | `/node` | Advanced Node.js patterns by Matteo Collina (Node core contributor) — streams, async, error handling, performance. Reference for non-trivial Node code. |
+| `real-time-features` | `/real-time-features` | Socket.IO and WebSocket implementation patterns. Reference when adding new socket events, rooms, or reconnection logic. |
+| `zod-schema-validation` | `/zod-schema-validation` | Advanced Zod patterns. Reference when writing or debugging schemas in `src/handlers/socket.js`. |
+| `rate-limiting-implementation` | `/rate-limiting-implementation` | Rate limiting patterns for HTTP and Socket.IO. Reference when tuning limits or adding new rate-limited events. |
+| `eslint-prettier-config` | `/eslint-prettier-config` | ESLint 9 flat config and Prettier setup. Run when linting configuration needs updating. |
+| `impeccable` | `/impeccable clarify` · `/impeccable audit` · `/impeccable critique` | Frontend UI review and polish. Use `clarify` to distil requirements, `audit` for accessibility/performance, `critique` for visual design feedback on `index.html` or `admin.html`. |
+
+---
+
+#### Matt Pocock — Engineering Skills
+
+Run `/setup-matt-pocock-skills` **once** before using any skill in this group.
+
+| Skill | Invoke | When to use |
+|-------|--------|-------------|
+| `setup-matt-pocock-skills` | `/setup-matt-pocock-skills` | **Run first.** Scaffolds `docs/agents/` config (issue tracker, triage labels, domain doc location) that all other engineering skills read. Run once per repo, then re-run if the issue tracker or label vocabulary changes. |
+| `diagnose` | `/diagnose` | Disciplined 6-phase debugging loop: build feedback loop → reproduce → minimise → hypothesise → instrument → fix → regression-test. Invoke when something is broken, throwing, or slower than expected. Especially effective for non-deterministic or hard-to-reproduce bugs. |
+| `grill-with-docs` | `/grill-with-docs` | Grilling session that stress-tests a plan against the existing domain model. Updates `CONTEXT.md` and ADRs inline as terminology is resolved. Use before starting any non-trivial feature or when domain language is ambiguous. Prefer over `/grill-me` when `CONTEXT.md` already exists. |
+| `improve-codebase-architecture` | `/improve-codebase-architecture` | Finds shallow modules and proposes deepening opportunities — refactors that concentrate complexity behind simpler interfaces. Produces an HTML report with before/after diagrams. Run periodically (every few days on active codebases) to combat software entropy. |
+| `prototype` | `/prototype` | Build throwaway code to answer a design question fast. Routes to two branches: a terminal app for state/logic questions, or multiple UI variations for visual design. Use before committing to an architecture when the answer isn't obvious on paper. |
+| `tdd` | `/tdd` | Red-green-refactor TDD loop using vertical slices. Writes one failing test, makes it pass, repeats. Use when building a new feature or fixing a bug — prevents horizontal-slice anti-patterns and keeps tests behaviour-focused rather than implementation-coupled. |
+| `to-issues` | `/to-issues` | Breaks a plan, spec, or PRD into independently-grabbable GitHub issues using tracer-bullet vertical slices. Each issue cuts through all layers end-to-end. Use after `/to-prd` or when a plan needs turning into actionable tickets. |
+| `to-prd` | `/to-prd` | Synthesises the current conversation context into a PRD and publishes it to the issue tracker. Does NOT interview — just captures what's been discussed. Use at the end of a planning/grilling session. |
+| `triage` | `/triage` | Moves issues through a state machine: `needs-triage` → `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`. Attempts reproduction, grills for missing info, posts agent briefs. Use to process incoming bugs and feature requests before handing to an AFK agent. |
+| `zoom-out` | `/zoom-out` | Tells the agent to zoom out and map all relevant modules and callers for an unfamiliar section of code, using the project's domain vocabulary. Use when you're lost in an area of the codebase and need a higher-level mental model before making changes. |
+
+---
+
+#### Matt Pocock — Productivity Skills
+
+| Skill | Invoke | When to use |
+|-------|--------|-------------|
+| `grill-me` | `/grill-me` | Relentless interview about a plan or design — walks every branch of the decision tree, asks one question at a time, provides recommended answers. Use at the start of any non-trivial change to align with the agent before it writes code. Use `/grill-with-docs` instead if the repo has `CONTEXT.md`. |
+| `caveman` | `/caveman` | Switches to ultra-compressed communication (~75% fewer tokens). Drops articles, filler, and pleasantries; keeps all technical accuracy. Use in long sessions to reduce context consumption. Disable with "stop caveman". |
+| `handoff` | `/handoff` | Compacts the current conversation into a handoff document (saved to the OS temp dir) so a fresh agent can continue. Redacts sensitive data. Use before hitting context limits or switching agents. |
+| `write-a-skill` | `/write-a-skill` | Creates new agent skills with proper `SKILL.md` structure, progressive disclosure, and bundled resource files. Use when you want to encode a repeatable workflow as an agent skill for this repo. |
+
+---
+
+#### Matt Pocock — Misc Skills
+
+These are checked in under `.claude/skills/` directly (not installable via `npx skills add` by name — copy manually after cloning if needed).
+
+| Skill | Invoke | When to use |
+|-------|--------|-------------|
+| `git-guardrails-claude-code` | `/git-guardrails-claude-code` | Installs a Claude Code `PreToolUse` hook that blocks destructive git commands (`push`, `reset --hard`, `clean -f`, `branch -D`, `checkout .`) before they execute. Run once to set up the hook, scoped to this project or globally. |
+| `migrate-to-shoehorn` | `/migrate-to-shoehorn` | Migrates test files from `as` type assertions to `@total-typescript/shoehorn` (`fromPartial`). Use when TypeScript test code has excessive `as` casts or double-`as` patterns. Test code only — never production. |
+| `scaffold-exercises` | `/scaffold-exercises` | Creates exercise directory structures with sections, problems, solutions, and explainers. Niche — only relevant if this repo is repurposed as a course or training material. |
+| `setup-pre-commit` | `/setup-pre-commit` | Sets up Husky pre-commit hooks with lint-staged (Prettier), type checking, and tests. Run once when adding commit-time quality gates to the repo. |
+
+---
+
+### Recommended Workflow for New Features
+
+```
+1. /setup-matt-pocock-skills   # once per repo
+2. /grill-with-docs            # align on plan + update CONTEXT.md
+3. /to-prd                     # publish PRD as GitHub issue
+4. /to-issues                  # break PRD into vertical-slice issues
+5. /tdd                        # implement each issue with red-green-refactor
+6. /code-review                # review the PR before merging
+```
+
+### Recommended Workflow for Bugs
+
+```
+1. /triage                     # classify + write agent brief
+2. /diagnose                   # build feedback loop + fix
+3. /architecture-decision-records  # if a structural decision was made
+```

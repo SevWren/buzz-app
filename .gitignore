@@ -8,6 +8,14 @@ coverage/
 public/*.bak
 public/*.original
 public/*.tmp
-# Agent skill directories — injected by `npx skills add`, not project source (BUG-13)
+# Agent skill directories — .agents/ is a mirror; not needed in the repo
 .agents/
-.claude/
+# Ignore Claude Code runtime state (projects, local settings, conversation history)
+# but ALLOW .claude/skills/ to be tracked so agents can use installed skills after clone.
+.claude/projects/
+.claude/settings.local.json
+.claude/todos/
+.claude/MEMORY.md
+.claude/plans/
+# Vitest already excludes .agents/** and .claude/** via vitest.config.js (BUG-13 fix)
+# so no test-asset pollution risk from tracking .claude/skills/.
