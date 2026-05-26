@@ -171,6 +171,24 @@ describe('registerSocketHandlers', () => {
         expect.objectContaining({ type: 'buzz', direction: 'in' }),
       );
     });
+
+    it('calls acknowledgement callback with { ok: true } on success (BUG-05)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      socket.receive('buzz-dad', undefined, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('calls acknowledgement callback with { ok: false } on rate limit (BUG-06)', () => {
+      const { socket } = setup();
+      const cb = vi.fn();
+      // Exhaust rate limit (BUZZ_LIMIT.max = 5 per 10s)
+      for (let i = 0; i < 5; i++) socket.receive('buzz-dad');
+      socket.receive('buzz-dad', undefined, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
   });
 
   // ── send-message ──────────────────────────────────────────────────────────
@@ -490,12 +508,30 @@ describe('registerSocketHandlers', () => {
       expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
     });
 
-    it('accepts mismatched valid emoji and valid label (schema validates fields independently)', () => {
-      // StatusSchema validates emoji and label as separate enums — cross-pairing is NOT enforced
+    it('rejects mismatched valid emoji + valid label (BUG-08: discriminated union)', () => {
+      // BUG-08 fix: StatusSchema now validates emoji+label as atomic pairs.
+      // Previously the independent-enum schema accepted { emoji:'😴', label:'Hungry' }.
       const { socket } = setup();
       const cb = vi.fn();
       socket.receive('set-status', { emoji: '😴', label: 'Hungry' }, cb);
-      expect(cb).toHaveBeenCalledWith({ ok: true });
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    });
+
+    it('accepts all 6 valid emoji+label pairs (BUG-08)', () => {
+      const pairs = [
+        { emoji: '😴', label: 'Tired' },
+        { emoji: '🍔', label: 'Hungry' },
+        { emoji: '🏫', label: 'At School' },
+        { emoji: '🏠', label: 'Heading Home' },
+        { emoji: '✅', label: 'All Good' },
+        { emoji: '😢', label: 'Upset' },
+      ];
+      for (const pair of pairs) {
+        const { socket } = setup();
+        const cb = vi.fn();
+        socket.receive('set-status', pair, cb);
+        expect(cb).toHaveBeenCalledWith({ ok: true });
+      }
     });
   });
 
@@ -911,12 +947,14 @@ describe('registerSocketHandlers', () => {
       expect(io.emit).not.toHaveBeenCalled();
     });
 
-    it('does NOT call socket.emit("ack") for unauthorized admin-mark-read (no ack event emitted)', () => {
-      // Source: admin-mark-read unauthorized path has only callback — no socket.emit('ack', ...)
+    it('emits ack type "error" for unauthorized admin-mark-read (BUG-07)', () => {
+      // BUG-07 fix: unauthorized path now emits ack, consistent with send-reply behaviour.
       const { socket } = setup({ isAdmin: false });
       socket.receive('admin-mark-read');
-      // socket.emit should not have been called at all (no ack event for this path)
-      expect(socket.emit).not.toHaveBeenCalled();
+      expect(socket.emit).toHaveBeenCalledWith(
+        'ack',
+        expect.objectContaining({ type: 'error', message: 'Unauthorized.' }),
+      );
     });
 
     it('messages-read ts is an exact ISO 8601 round-trip', () => {

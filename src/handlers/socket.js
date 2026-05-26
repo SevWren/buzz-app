@@ -16,10 +16,16 @@ const QuickNeedSchema = z.object({
   need: z.enum(['Pickup', 'Food', 'Money', 'Call Me', 'Help']),
 });
 
-const StatusSchema = z.object({
-  emoji: z.enum(['😴', '🍔', '🏫', '🏠', '✅', '😢']),
-  label: z.enum(['Tired', 'Hungry', 'At School', 'Heading Home', 'All Good', 'Upset']),
-});
+// BUG-08: validate emoji+label as atomic pairs — independent enums accepted mismatches
+// (e.g. { emoji:'😴', label:'Hungry' }) which stores and broadcasts semantically invalid status.
+const StatusSchema = z.union([
+  z.object({ emoji: z.literal('😴'), label: z.literal('Tired') }),
+  z.object({ emoji: z.literal('🍔'), label: z.literal('Hungry') }),
+  z.object({ emoji: z.literal('🏫'), label: z.literal('At School') }),
+  z.object({ emoji: z.literal('🏠'), label: z.literal('Heading Home') }),
+  z.object({ emoji: z.literal('✅'), label: z.literal('All Good') }),
+  z.object({ emoji: z.literal('😢'), label: z.literal('Upset') }),
+]);
 
 const LocationSchema = z.object({
   lat:      z.number().min(-90).max(90),
@@ -119,10 +125,13 @@ export function registerSocketHandlers(io) {
     );
 
     // ── buzz-dad ─────────────────────────────────────────────────────────────
-    socket.on('buzz-dad', () => {
+    // BUG-05/06: handler now accepts (_data, callback) so Socket.IO ack is resolved.
+    // All return paths call callback() to prevent ack tracker memory leaks.
+    socket.on('buzz-dad', (_data, callback) => {
       if (buzzLimiter.isLimited(socket.id, BUZZ_LIMIT)) {
         logger.warn({ socketId: socket.id, address: socket.handshake?.address }, 'buzz-dad rate limit exceeded');
         socket.emit('ack', { type: 'error', message: 'Slow down — too many buzzes.' });
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
         return;
       }
 
@@ -130,9 +139,10 @@ export function registerSocketHandlers(io) {
       playAlert('buzz');
       appendMessage({ direction: 'in', type: 'buzz', socketId: socket.id, payload: {} });
       const buzzMsg = buildIncomingMsg('buzz', {});
-      io.to('admin').emit('incoming-message', buzzMsg); // BUG-02: admin room only
-      socket.emit('incoming-message', buzzMsg);          // sender echo
+      io.to('admin').emit('incoming-message', buzzMsg);
+      socket.emit('incoming-message', buzzMsg);
       socket.emit('ack', { type: 'buzz', message: 'Buzz received — Dad has been alerted!' });
+      if (typeof callback === 'function') callback({ ok: true });
     });
 
     // ── send-message ──────────────────────────────────────────────────────────
@@ -354,6 +364,8 @@ export function registerSocketHandlers(io) {
     // ── admin-mark-read (admin only) ──────────────────────────────────────────
     socket.on('admin-mark-read', (data, callback) => {
       if (socket.data?.isAdmin !== true) {
+        // BUG-07: emit ack on unauthorized — mirrors send-reply behaviour for consistency
+        socket.emit('ack', { type: 'error', message: 'Unauthorized.' });
         if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
         return;
       }

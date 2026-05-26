@@ -10,7 +10,7 @@
     "prestart": "node scripts/preflight.js",
     "start": "node src/server.js",
     "predev": "node scripts/preflight.js",
-    "dev": "node --watch --env-file=.env src/server.js",
+    "dev": "node --watch src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

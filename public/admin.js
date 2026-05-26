@@ -19,6 +19,9 @@ const btnReply    = document.getElementById('btn-reply');
 let unreadCount = 0;
 // Map<messageId, HTMLSpanElement> — read-receipt span for each outbound bubble
 const readReceiptMap = new Map();
+// BUG-09: flag + buffer to prevent live messages being wiped by loadHistory's innerHTML=''
+let loadingHistory = false;
+let pendingLive    = [];
 
 // ── Connection lifecycle ──────────────────────────────────────────────────────
 socket.on('connect', () => {
@@ -52,6 +55,12 @@ socket.on('connect_error', () => {
 
 // ── Incoming messages ─────────────────────────────────────────────────────────
 socket.on('incoming-message', (msg) => {
+  // BUG-09: if loadHistory fetch is in-flight, buffer the message so that
+  // threadList.innerHTML='' in loadHistory doesn't wipe it.
+  if (loadingHistory) {
+    pendingLive.push(msg);
+    return;
+  }
   addBubble(msg);
   threadList.scrollTop = threadList.scrollHeight;
 
@@ -127,6 +136,10 @@ socket.on('server-shutdown', ({ message }) => {
 
 // ── History loading ───────────────────────────────────────────────────────────
 async function loadHistory() {
+  // BUG-09: set flag before fetch so incoming-message events are buffered,
+  // not rendered into a thread that is about to be cleared.
+  loadingHistory = true;
+  pendingLive    = [];
   try {
     const res = await fetch('/admin/history');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -138,16 +151,28 @@ async function loadHistory() {
 
     if (data.messages.length === 0) {
       threadList.appendChild(threadEmpty);
-      return;
+    } else {
+      // readRecentMessages returns oldest-first — render in that order
+      for (const msg of data.messages) {
+        addBubble(msg, { skipScroll: true });
+      }
     }
-
-    // readRecentMessages returns oldest-first — render in that order
-    for (const msg of data.messages) {
-      addBubble(msg, { skipScroll: true });
+    // Flush any live messages that arrived while the fetch was in-flight
+    for (const msg of pendingLive) {
+      addBubble(msg);
     }
-    threadList.scrollTop = threadList.scrollHeight;
+    if (data.messages.length > 0 || pendingLive.length > 0) {
+      threadList.scrollTop = threadList.scrollHeight;
+    }
   } catch {
     addSystemNote('Could not load history — check server.');
+    // Still flush buffered live messages on error so they are not lost
+    for (const msg of pendingLive) {
+      addBubble(msg);
+    }
+  } finally {
+    loadingHistory = false;
+    pendingLive    = [];
   }
 }
 
@@ -171,18 +196,23 @@ function addBubble(msg, opts = {}) {
   textEl.className = 'bubble-text';
 
   if (msg.type === 'location' && msg.payload) {
-    // Render location as "📍 coords — [Open in Maps]" with a real clickable link
-    const { lat, lng, accuracy } = msg.payload;
-    // Use URLSearchParams to safely encode coordinate values into the URL
-    // rather than raw template-string interpolation.
-    const mapsUrl = `https://maps.google.com/?${new URLSearchParams({ q: `${lat},${lng}` })}`;
-    textEl.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m) — `;
-    const link = document.createElement('a');
-    link.href        = mapsUrl;
-    link.textContent = 'Open in Maps';
-    link.target      = '_blank';
-    link.rel         = 'noopener noreferrer';
-    textEl.appendChild(link);
+    // BUG-12: guard against null/undefined lat/lng from corrupted log entries
+    const lat      = msg.payload?.lat ?? null;
+    const lng      = msg.payload?.lng ?? null;
+    const accuracy = msg.payload?.accuracy ?? 0;
+    if (lat == null || lng == null) {
+      textEl.textContent = '📍 Location (coordinates unavailable)';
+    } else {
+      // Use URLSearchParams to safely encode coordinate values into the URL
+      const mapsUrl = `https://maps.google.com/?${new URLSearchParams({ q: `${lat},${lng}` })}`;
+      textEl.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m) — `;
+      const link = document.createElement('a');
+      link.href        = mapsUrl;
+      link.textContent = 'Open in Maps';
+      link.target      = '_blank';
+      link.rel         = 'noopener noreferrer';
+      textEl.appendChild(link);
+    }
   } else {
     textEl.textContent = formatPayload(msg.type, msg.payload); // textContent — XSS safe
   }
@@ -207,6 +237,14 @@ function addBubble(msg, opts = {}) {
 
   li.append(textEl, meta);
   threadList.appendChild(li);
+
+  // BUG-11: cap thread at 200 bubbles — mirrors client.js behaviour
+  while (threadList.children.length > 200) {
+    const removed = threadList.firstChild;
+    // Remove stale receipt reference so the Map doesn't grow unbounded
+    if (removed.dataset?.msgId) readReceiptMap.delete(removed.dataset.msgId);
+    threadList.removeChild(removed);
+  }
 
   if (!opts.skipScroll) {
     threadList.scrollTop = threadList.scrollHeight;
