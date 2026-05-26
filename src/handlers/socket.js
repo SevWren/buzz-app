@@ -55,8 +55,9 @@ const QUICK_LIMIT    = { windowMs: 10_000, max: 10 };
 const STATUS_LIMIT   = { windowMs: 10_000, max:  5 };
 const LOCATION_LIMIT = { windowMs: 30_000, max:  3 };
 const BATTERY_LIMIT  = { windowMs: 60_000, max:  2 };
-const COUNTDOWN_LIMIT= { windowMs: 10_000, max:  5 };
-const REPLY_LIMIT    = { windowMs:  5_000, max: 20 };
+const COUNTDOWN_LIMIT  = { windowMs: 10_000, max:  5 };
+const REPLY_LIMIT      = { windowMs:  5_000, max: 20 };
+const MARK_READ_LIMIT  = { windowMs:  5_000, max: 10 }; // BUG-22: admin-mark-read rate limit
 
 function makeRateLimiter() {
   // Map<socketId, { count: number, resetAt: number }>
@@ -83,8 +84,9 @@ const quickLimiter    = makeRateLimiter();
 const statusLimiter   = makeRateLimiter();
 const locationLimiter = makeRateLimiter();
 const batteryLimiter  = makeRateLimiter();
-const countdownLimiter= makeRateLimiter();
-const replyLimiter    = makeRateLimiter();
+const countdownLimiter  = makeRateLimiter();
+const replyLimiter      = makeRateLimiter();
+const markReadLimiter   = makeRateLimiter(); // BUG-22
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -369,6 +371,11 @@ export function registerSocketHandlers(io) {
         if (typeof callback === 'function') callback({ ok: false, error: 'Unauthorized' });
         return;
       }
+      // BUG-22: rate limit to prevent flooding all clients with messages-read broadcasts
+      if (markReadLimiter.isLimited(socket.id, MARK_READ_LIMIT)) {
+        if (typeof callback === 'function') callback({ ok: false, error: 'Rate limit exceeded' });
+        return;
+      }
       logger.info({ socketId: socket.id }, 'admin-mark-read received');
       io.emit('messages-read', { ts: new Date().toISOString() });
       if (typeof callback === 'function') callback({ ok: true });
@@ -385,6 +392,7 @@ export function registerSocketHandlers(io) {
       batteryLimiter.remove(socket.id);
       countdownLimiter.remove(socket.id);
       replyLimiter.remove(socket.id);
+      markReadLimiter.remove(socket.id); // BUG-22
       logger.info({ socketId: socket.id, address: socket.handshake?.address, reason }, 'Client disconnected');
     });
 

@@ -169,7 +169,7 @@ btnLocation.addEventListener('click', () => {
       };
       addErrorBubble(GEO_ERRORS[err.code] ?? `Location error (code ${err.code}).`);
     },
-    { timeout: 10_000, maximumAge: 30_000 },
+    { timeout: 10_000, maximumAge: 0 }, // BUG-24: maximumAge:0 ensures fresh position (was 30s stale)
   );
 });
 
@@ -222,7 +222,9 @@ btnClearThread.addEventListener('click', () => {
 
 // ── Server shutdown — Matrix takeover ────────────────────────────────────────
 socket.on('server-shutdown', ({ message }) => {
-  // Remove all socket listeners to prevent reconnect side-effects
+  // BUG-21: remove this listener first so a double-emit can't trigger the sequence twice
+  socket.off('server-shutdown');
+  // Remove all other socket listeners to prevent reconnect side-effects
   socket.off('connect');
   socket.off('disconnect');
   socket.off('connect_error');

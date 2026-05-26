@@ -1,4 +1,4 @@
-import { appendFile, readFile, mkdir } from 'node:fs/promises';
+import { appendFile, readFile, mkdir, stat, rename } from 'node:fs/promises';
 import { dirname, join }               from 'node:path';
 import { fileURLToPath }               from 'node:url';
 import { randomUUID }                  from 'node:crypto';
@@ -8,6 +8,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const LOG_PATH   = join(__dirname, '..', '..', 'data', 'messages.jsonl');
 const DATA_DIR   = join(__dirname, '..', '..', 'data');
+
+// BUG-15: memoize the mkdir call so it only hits the OS once per process lifetime.
+// mkdir with recursive:true is a no-op if the dir exists, but it is still a syscall.
+let dataDirReady = false;
+async function ensureDataDir() {
+  if (dataDirReady) return;
+  await mkdir(DATA_DIR, { recursive: true });
+  dataDirReady = true;
+}
+
+// BUG-17: rotate the log when it exceeds 10 MB to prevent unbounded disk growth.
+// Keeps one archive (.jsonl.1); next write starts a fresh log automatically.
+const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10 MB
+async function maybeRotate() {
+  try {
+    const { size } = await stat(LOG_PATH);
+    if (size > MAX_LOG_BYTES) {
+      await rename(LOG_PATH, LOG_PATH + '.1');
+    }
+  } catch {
+    // ENOENT (file not yet created) or stat failure — nothing to rotate
+  }
+}
 
 /**
  * Append a message record to data/messages.jsonl.
@@ -49,8 +72,9 @@ export async function appendMessage(record) {
       payload,
     }) + '\n';
   try {
-    await mkdir(DATA_DIR, { recursive: true });
+    await ensureDataDir();
     await appendFile(LOG_PATH, line, 'utf8');
+    await maybeRotate(); // BUG-17: rotate after write if file exceeds 10 MB
   } catch (err) {
     // Log only code and message — never the full err object, which can contain
     // file-system paths from Node.js stack traces.
