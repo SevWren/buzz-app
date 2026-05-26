@@ -45,10 +45,16 @@ function createMockSocket() {
 }
 
 function createMockIo(socket) {
+  // io.to(room) returns a chainable object with .emit — mirrors the Socket.IO API
+  // used by the BUG-02 fix (io.to('admin').emit(...)).
+  const roomEmit = vi.fn();
   return {
     on:   vi.fn((event, cb) => { if (event === 'connection') cb(socket); }),
     emit: vi.fn(),
     use:  vi.fn(),
+    to:   vi.fn(() => ({ emit: roomEmit })),
+    // Expose roomEmit so tests can assert on it
+    _roomEmit: roomEmit,
   };
 }
 
@@ -123,8 +129,9 @@ describe('registerSocketHandlers', () => {
     it('ack message is exactly "Buzz received — Dad has been alerted!"', () => {
       const { socket } = setup();
       socket.receive('buzz-dad');
-      const [, payload] = socket.emit.mock.calls[0];
-      expect(payload.message).toBe('Buzz received — Dad has been alerted!');
+      // socket.emit[0] is now the incoming-message echo (BUG-02 fix); find ack by event name
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toBe('Buzz received — Dad has been alerted!');
     });
 
     it('logs the buzz event', () => {
@@ -150,10 +157,16 @@ describe('registerSocketHandlers', () => {
       });
     });
 
-    it('calls io.emit("incoming-message") with type "buzz"', () => {
+    it('emits "incoming-message" to admin room with type "buzz" (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('buzz-dad');
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io.to).toHaveBeenCalledWith('admin');
+      expect(io._roomEmit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({ type: 'buzz', direction: 'in' }),
+      );
+      // Sender echo
+      expect(socket.emit).toHaveBeenCalledWith(
         'incoming-message',
         expect.objectContaining({ type: 'buzz', direction: 'in' }),
       );
@@ -172,16 +185,16 @@ describe('registerSocketHandlers', () => {
     it('ack message echoes the sent text', () => {
       const { socket } = setup();
       socket.receive('send-message', { text: 'ping' });
-      const [, payload] = socket.emit.mock.calls[0];
-      expect(payload.message).toContain('ping');
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toContain('ping');
     });
 
     it('trims leading/trailing whitespace before echoing', () => {
       const { socket } = setup();
       socket.receive('send-message', { text: '  hello  ' });
-      const [, payload] = socket.emit.mock.calls[0];
-      expect(payload.message).toContain('hello');
-      expect(payload.message).not.toContain('  hello  ');
+      const ackCall = socket.emit.mock.calls.find(([event]) => event === 'ack');
+      expect(ackCall[1].message).toContain('hello');
+      expect(ackCall[1].message).not.toContain('  hello  ');
     });
 
     it('accepts a message exactly 500 characters long', () => {
@@ -222,10 +235,15 @@ describe('registerSocketHandlers', () => {
       );
     });
 
-    it('calls io.emit("incoming-message") with type "message"', () => {
+    it('emits "incoming-message" to admin room with type "message" (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('send-message', { text: 'hi' });
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io.to).toHaveBeenCalledWith('admin');
+      expect(io._roomEmit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({ type: 'message', direction: 'in' }),
+      );
+      expect(socket.emit).toHaveBeenCalledWith(
         'incoming-message',
         expect.objectContaining({ type: 'message', direction: 'in' }),
       );
@@ -344,10 +362,15 @@ describe('registerSocketHandlers', () => {
       );
     });
 
-    it('calls io.emit("incoming-message") with type "quick-need"', () => {
+    it('emits "incoming-message" to admin room with type "quick-need" (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('quick-need', { need: 'Money' });
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io.to).toHaveBeenCalledWith('admin');
+      expect(io._roomEmit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({ type: 'quick-need', direction: 'in' }),
+      );
+      expect(socket.emit).toHaveBeenCalledWith(
         'incoming-message',
         expect.objectContaining({ type: 'quick-need', direction: 'in' }),
       );
@@ -439,12 +462,17 @@ describe('registerSocketHandlers', () => {
       expect(cb).toHaveBeenCalledWith({ ok: true });
     });
 
-    it('calls io.emit("incoming-message") with type "status"', () => {
+    it('emits "incoming-message" to admin room with type "status" (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('set-status', { emoji: '✅', label: 'All Good' });
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io.to).toHaveBeenCalledWith('admin');
+      expect(io._roomEmit).toHaveBeenCalledWith(
         'incoming-message',
-        expect.objectContaining({ type: 'status' }),
+        expect.objectContaining({ type: 'status', direction: 'in' }),
+      );
+      expect(socket.emit).toHaveBeenCalledWith(
+        'incoming-message',
+        expect.objectContaining({ type: 'status', direction: 'in' }),
       );
     });
 
@@ -1522,11 +1550,11 @@ describe('registerSocketHandlers', () => {
 
   // ── incoming-message broadcast payload shape ───────────────────────────────
 
-  describe('io.emit incoming-message payload shape', () => {
-    it('buzz-dad broadcast includes id, direction, type, payload', () => {
+  describe('incoming-message broadcast payload shape', () => {
+    it('buzz-dad: admin room receives correct shape (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('buzz-dad');
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io._roomEmit).toHaveBeenCalledWith(
         'incoming-message',
         expect.objectContaining({
           id:        'test-uuid-1234',
@@ -1538,10 +1566,10 @@ describe('registerSocketHandlers', () => {
       );
     });
 
-    it('send-message broadcast includes correct payload.text', () => {
+    it('send-message: admin room receives correct payload.text (BUG-02)', () => {
       const { socket, io } = setup();
       socket.receive('send-message', { text: 'hello world' });
-      expect(io.emit).toHaveBeenCalledWith(
+      expect(io._roomEmit).toHaveBeenCalledWith(
         'incoming-message',
         expect.objectContaining({
           id:        'test-uuid-1234',
@@ -1552,7 +1580,7 @@ describe('registerSocketHandlers', () => {
       );
     });
 
-    it('send-reply broadcast has direction "out"', () => {
+    it('send-reply: ALL clients receive direction "out" via io.emit (reply is not private)', () => {
       const { socket, io } = setup({ isAdmin: true });
       socket.receive('send-reply', { text: 'on my way' });
       expect(io.emit).toHaveBeenCalledWith(

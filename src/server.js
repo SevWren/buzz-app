@@ -49,7 +49,7 @@ const io = new Server(httpServer, {
 // Reject new connections when the server is already at capacity.
 // Without this, a single IP can open many sockets and bypass per-socket rate limits.
 io.use((socket, next) => {
-  if (io.engine.clientsCount > config.maxSocketConnections) {
+  if (io.engine.clientsCount >= config.maxSocketConnections) { // BUG-04: >= not >
     logger.warn(
       { address: socket.handshake?.address, count: io.engine.clientsCount },
       'Socket connection limit exceeded — rejecting new connection',
@@ -131,6 +131,12 @@ app.use(
 );
 
 // --- Static & routes ---
+// Explicit root handler: express.static({ index: false }) disables automatic index.html
+// lookup for directory requests, so GET / would fall through to a 404 without this route.
+// index: false is kept to prevent directory listing for /fonts/ and other subdirs.
+app.get('/', (_req, res) => {
+  res.sendFile(join(__dirname, '..', 'public', 'index.html'));
+});
 app.use(express.static(join(__dirname, '..', 'public'), {
   index:    false,            // don't serve directory index files (prevents listing /fonts/ etc.)
   dotfiles: 'ignore',         // never serve .env, .git, etc. if accidentally placed in public/
@@ -139,8 +145,10 @@ app.use('/api', healthRouter);
 app.use('/admin', adminRouter);
 
 // --- Socket admin-auth middleware ---
-// Mark connections from localhost as admin sockets.
+// Mark connections from localhost as admin sockets and join them to the 'admin' room.
 // socket.data.isAdmin is checked in send-reply and admin-mark-read handlers.
+// The 'admin' room is used to scope incoming-message broadcasts (BUG-02 fix):
+// non-admin sockets no longer receive events they did not themselves send.
 io.use((socket, next) => {
   const raw        = socket.handshake.address ?? '';
   const normalized = raw.replace('::ffff:', '').toLowerCase();
@@ -149,7 +157,9 @@ io.use((socket, next) => {
     normalized === '::1'       ||
     normalized === 'localhost';
 
-  if (!socket.data.isAdmin) {
+  if (socket.data.isAdmin) {
+    socket.join('admin');
+  } else {
     logger.info(
       { address: raw },
       'Socket connection from non-localhost (isAdmin=false)',

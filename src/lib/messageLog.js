@@ -66,6 +66,7 @@ export async function appendMessage(record) {
  * @returns {Promise<object[]>}
  */
 export async function readRecentMessages(limit = 100) {
+  if (limit === 0) return []; // BUG-03: slice(-0) === slice(0) returns all records
   try {
     const raw    = await readFile(LOG_PATH, 'utf8');
     const lines  = raw.split('\n').filter(l => l.trim() !== '');

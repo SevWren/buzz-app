@@ -129,7 +129,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'Buzz received');
       playAlert('buzz');
       appendMessage({ direction: 'in', type: 'buzz', socketId: socket.id, payload: {} });
-      io.emit('incoming-message', buildIncomingMsg('buzz', {}));
+      const buzzMsg = buildIncomingMsg('buzz', {});
+      io.to('admin').emit('incoming-message', buzzMsg); // BUG-02: admin room only
+      socket.emit('incoming-message', buzzMsg);          // sender echo
       socket.emit('ack', { type: 'buzz', message: 'Buzz received — Dad has been alerted!' });
     });
 
@@ -156,7 +158,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'Message received');
       playAlert('message');
       appendMessage({ direction: 'in', type: 'message', socketId: socket.id, payload: { text } });
-      io.emit('incoming-message', buildIncomingMsg('message', { text }));
+      const msgMsg = buildIncomingMsg('message', { text });
+      io.to('admin').emit('incoming-message', msgMsg);
+      socket.emit('incoming-message', msgMsg);
       socket.emit('ack', { type: 'message', message: `Server received: "${text}"` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -183,7 +187,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'quick-need received');
       playAlert('quick-need', need);
       appendMessage({ direction: 'in', type: 'quick-need', socketId: socket.id, payload: { need } });
-      io.emit('incoming-message', buildIncomingMsg('quick-need', { need }));
+      const quickMsg = buildIncomingMsg('quick-need', { need });
+      io.to('admin').emit('incoming-message', quickMsg);
+      socket.emit('incoming-message', quickMsg);
       socket.emit('ack', { type: 'quick-need', message: `Need sent: ${need}` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -210,7 +216,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'set-status received');
       playAlert('status');
       appendMessage({ direction: 'in', type: 'status', socketId: socket.id, payload: { emoji, label } });
-      io.emit('incoming-message', buildIncomingMsg('status', { emoji, label }));
+      const statusMsg = buildIncomingMsg('status', { emoji, label });
+      io.to('admin').emit('incoming-message', statusMsg);
+      socket.emit('incoming-message', statusMsg);
       socket.emit('ack', { type: 'status', message: `Status set: ${emoji} ${label}` });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -237,7 +245,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'location-ping received');
       playAlert('location');
       appendMessage({ direction: 'in', type: 'location', socketId: socket.id, payload: { lat, lng, accuracy } });
-      io.emit('incoming-message', buildIncomingMsg('location', { lat, lng, accuracy }));
+      const locMsg = buildIncomingMsg('location', { lat, lng, accuracy });
+      io.to('admin').emit('incoming-message', locMsg);
+      socket.emit('incoming-message', locMsg);
       socket.emit('ack', { type: 'location', message: 'Location sent to Dad.' });
       if (typeof callback === 'function') callback({ ok: true });
     });
@@ -264,7 +274,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'battery-low received');
       playAlert('battery-low');
       appendMessage({ direction: 'in', type: 'battery-low', socketId: socket.id, payload: { level } });
-      io.emit('incoming-message', buildIncomingMsg('battery-low', { level }));
+      const battMsg = buildIncomingMsg('battery-low', { level });
+      io.to('admin').emit('incoming-message', battMsg);
+      socket.emit('incoming-message', battMsg);
       const pct = level !== null ? `${Math.round(level * 100)}%` : 'unknown';
       socket.emit('ack', { type: 'battery-low', message: `Battery alert sent (${pct}).` });
       if (typeof callback === 'function') callback({ ok: true });
@@ -292,7 +304,9 @@ export function registerSocketHandlers(io) {
       logger.info({ socketId: socket.id }, 'countdown-start received');
       playAlert('countdown');
       appendMessage({ direction: 'in', type: 'countdown', socketId: socket.id, payload: { minutes } });
-      io.emit('incoming-message', buildIncomingMsg('countdown', { minutes }));
+      const cdMsg = buildIncomingMsg('countdown', { minutes });
+      io.to('admin').emit('incoming-message', cdMsg);
+      socket.emit('incoming-message', cdMsg);
       socket.emit('ack', { type: 'countdown', message: `Countdown started: ${minutes} min.` });
       if (typeof callback === 'function') callback({ ok: true });
     });

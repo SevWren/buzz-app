@@ -247,17 +247,13 @@ describe('readRecentMessages', () => {
     expect(result[2].id).toBe('9');
   });
 
-  it('returns ALL records when limit=0 (slice(-0) === slice(0) in JS)', async () => {
-    // JavaScript: array.slice(-0) === array.slice(0) — returns all elements
-    const lines = [
-      JSON.stringify({ id: '1', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
-      JSON.stringify({ id: '2', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
-      JSON.stringify({ id: '3', ts: 't', direction: 'in', type: 'buzz', socketId: 'x', payload: {} }),
-    ].join('\n') + '\n';
-    readFile.mockResolvedValueOnce(lines);
+  it('returns [] when limit=0 (BUG-03 fix: slice(-0) guard)', async () => {
+    // Previously: array.slice(-0) === array.slice(0) returned all elements — now guarded.
+    // readFile is never called when limit===0; no mock needed.
     const { readRecentMessages } = await getModule();
     const result = await readRecentMessages(0);
-    expect(result).toHaveLength(3);
+    expect(result).toEqual([]);
+    expect(readFile).not.toHaveBeenCalled();
   });
 
   it('returns all lines when limit exceeds total record count', async () => {

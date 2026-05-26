@@ -32,7 +32,7 @@ function buildSocketServer() {
   const httpServer = createServer(app);
   const io = new Server(httpServer, { cors: { origin: '*' } });
 
-  // Mirror the io.use() middleware from server.js — sets isAdmin for localhost
+  // Mirror the io.use() middleware from server.js — sets isAdmin + joins admin room (BUG-02)
   io.use((socket, next) => {
     const raw        = socket.handshake.address;
     const normalized = raw.replace('::ffff:', '');
@@ -40,6 +40,7 @@ function buildSocketServer() {
       normalized === '127.0.0.1' ||
       normalized === '::1'       ||
       normalized === 'localhost';
+    if (socket.data.isAdmin) socket.join('admin'); // BUG-02: scope incoming-message broadcasts
     next();
   });
 
@@ -227,7 +228,8 @@ describe('Socket.IO integration', () => {
   });
 
   describe('send-message — broadcast', () => {
-    it('send-message broadcasts incoming-message to all connected clients', async () => {
+    it('send-message emits incoming-message to admin room (BUG-02: admin receives)', async () => {
+      // Both client and client2 connect from localhost → both are admins → both in admin room
       const client2 = Client(`http://localhost:${port}`, { forceNew: true, transports: ['websocket'] });
       try {
         await waitForConnect(client2);
@@ -276,7 +278,8 @@ describe('Socket.IO integration', () => {
       expect(result.error.length).toBeGreaterThan(0);
     });
 
-    it('server broadcasts incoming-message to all connected clients', async () => {
+    it('quick-need emits incoming-message to admin room (BUG-02: admin receives)', async () => {
+      // Both client and client2 connect from localhost → both are admins → both in admin room
       const client2 = Client(`http://localhost:${port}`, { forceNew: true, transports: ['websocket'] });
       try {
         await waitForConnect(client2);

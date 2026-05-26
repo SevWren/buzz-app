@@ -66,7 +66,9 @@ function buildApp() {
     })
   );
   app.use('/api', healthRouter);
-  app.use(express.static('public'));
+  // Mirror production setup: explicit root route + index:false (BUG-01 fix)
+  app.get('/', (_req, res) => res.sendFile(new URL('../../public/index.html', import.meta.url).pathname));
+  app.use(express.static('public', { index: false }));
   app.use(errorHandler);
   return app;
 }
@@ -76,6 +78,16 @@ describe('HTTP integration', () => {
 
   beforeAll(() => {
     app = buildApp();
+  });
+
+  // ── Root route (BUG-01) ───────────────────────────────────────────────────
+
+  describe('GET /', () => {
+    it('returns 200 with text/html (index:false must not break the root)', async () => {
+      const res = await request(app).get('/');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/html/);
+    });
   });
 
   // ── Health endpoint ───────────────────────────────────────────────────────
