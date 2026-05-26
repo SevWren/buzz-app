@@ -21,7 +21,7 @@ Serves the son's mobile UI (`public/index.html`).
 
 ### `GET /api/health`
 
-Liveness check.
+Liveness check. Suitable for uptime monitors and load balancer health checks. Always returns `Cache-Control: no-store`.
 
 - Auth: none
 - Response headers: `Cache-Control: no-store`
@@ -88,9 +88,9 @@ Returns `{ "messages": [] }` if no log file exists yet.
 
 ## Socket.IO Events
 
-The server uses Socket.IO 4 over the default WebSocket transport with long-polling fallback.
+The server uses Socket.IO 4 with `transports: ['websocket']`. **Long-polling is disabled.** Clients must support WebSocket upgrades. See [Architecture — Socket.IO Configuration](architecture.md#socketio-configuration) for the full parameter table and rationale.
 
-**Connection URL:** `ws://[host]:[port]` (or `http://[host]:[port]` — Socket.IO handles upgrade)
+**Connection URL:** `ws://[host]:[port]` (or `http://[host]:[port]` — Socket.IO handles the WebSocket upgrade)
 
 ---
 
@@ -101,6 +101,19 @@ All events below are sent from the browser client to the server. All accept an o
 ```js
 socket.emit('event-name', payload, (response) => {
   // response: { ok: boolean, error?: string }
+});
+```
+
+Example with error handling:
+
+```js
+socket.emit('send-message', { text: 'Can I get a ride?' }, (response) => {
+  if (response.ok) {
+    console.log('Message delivered');
+  } else {
+    // e.g. "Slow down — too many send-messages." or "Validation error: Message too long"
+    console.error('Failed:', response.error);
+  }
 });
 ```
 
@@ -315,7 +328,23 @@ Emitted during graceful shutdown before sockets are disconnected.
 { "message": "Server is shutting down. Connection will be lost." }
 ```
 
-Clients should stop reconnecting when this event is received.
+**Son's client behaviour (`public/client.js`):**
+1. All socket listeners are removed (prevents the thread from updating behind the animation overlay)
+2. The socket is disconnected
+3. `#matrix-scene` overlay is activated
+4. `GlitchSequencer.trigger(message)` is called — the 6-phase matrix shutdown animation begins
+5. The `message` field becomes the Phase 5 permanent on-screen message
+6. The page must be refreshed to reconnect
+
+See [docs/matrix-shutdown.md](matrix-shutdown.md) for the full animation sequence and timing.
+
+**Admin client behaviour (`public/admin.js`):**
+1. All socket listeners are removed
+2. The socket is disconnected
+3. `document.title` is updated to `"Buzz App — Offline"`
+4. A `[SYSTEM]` note is appended to the conversation thread
+5. The reply input is disabled
+6. No matrix animation is shown on the admin panel
 
 ---
 

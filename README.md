@@ -104,6 +104,12 @@ Press **Ctrl+C** in the terminal.
 
 ---
 
+## Server Shutdown Animation
+
+When you shut down the server (Ctrl+C or service stop), the son's phone displays a cinematic Matrix-style shutdown animation — the app interface fades and is consumed by falling green characters, followed by three escalating messages. The final message persists permanently on screen until the page is refreshed. See `docs/matrix-shutdown.md` for full details.
+
+---
+
 ## Persistent Message Log
 
 Every event is permanently saved to `data/messages.jsonl`. Each line is a JSON record:
@@ -176,3 +182,5 @@ npm run format        # Prettier
 
 See `CLAUDE.md` for architecture details, coding conventions, and agent guidance.
 See `docs/` for full technical documentation.
+See `docs/index.md` for the full documentation index.
+See `CONTRIBUTING.md` for contribution guidelines and coding conventions.

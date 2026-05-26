@@ -1,5 +1,11 @@
 # Matrix Shutdown Plan — Full Audit
 
+> **STATUS: PRE-IMPLEMENTATION AUDIT — FEATURE IS NOW IMPLEMENTED**
+>
+> Issues identified in this audit were addressed during development.
+> `public/matrix.js` references resolved items by number (e.g. `// audit #3`, `// audit #42`).
+> For the current as-implemented reference, see **[docs/matrix-shutdown.md](matrix-shutdown.md)**.
+
 Audit of `docs/matrix-shutdown-plan.md`. Issues are classified by severity.
 
 - **CRITICAL** — will produce broken behaviour or crash at runtime

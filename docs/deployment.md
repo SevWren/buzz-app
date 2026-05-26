@@ -50,7 +50,8 @@ CORS_ORIGIN=*
 | `PORT` | 1–65535 | Default 3000. Change if port is in use |
 | `NODE_ENV` | `development`, `test`, `production` | Use `production` for always-on installs |
 | `LOG_LEVEL` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` | `info` is recommended; `debug` adds verbose output |
-| `CORS_ORIGIN` | URL string or `*` | `*` is fine for home use; restrict for internet-facing |
+| `CORS_ORIGIN` | URL string or `*` | `*` is fine for home use; restrict for internet-facing. Must match `^https?://[^/]+$` (scheme + host, no trailing slash). |
+| `MAX_SOCKET_CONNECTIONS` | 1–1000 | Default 50. Maximum simultaneous Socket.IO connections. Prevents per-socket rate limits from being bypassed by opening many sockets simultaneously. |
 
 If any variable fails Zod validation, the server logs an error and exits immediately with code 1.
 
@@ -89,6 +90,30 @@ The persistent message log is stored at `data/messages.jsonl` inside the project
 - Back it up manually or set up a cron job to archive it periodically
 
 To clear the log, delete `data/messages.jsonl`. The server creates a new empty file on the next message.
+
+### Data retention
+
+The file grows indefinitely. For long-running deployments, set up log rotation:
+
+**Linux (logrotate):**
+```
+/path/to/buzz-app/data/messages.jsonl {
+    weekly
+    rotate 4
+    copytruncate
+    compress
+    missingok
+}
+```
+
+**Any OS (cron/scheduled task):**
+```bash
+# Archive monthly (run via cron or Task Scheduler)
+cp data/messages.jsonl "data/messages-$(date +%Y-%m).jsonl"
+truncate -s 0 data/messages.jsonl
+```
+
+See [docs/security.md](security.md) for privacy considerations around the log contents.
 
 ---
 
@@ -170,7 +195,7 @@ Restart the server. The phone must connect to the new port: `http://192.168.1.42
 
 If you put nginx or Caddy in front of the app (e.g. for HTTPS termination):
 
-1. Uncomment in `server.js`:
+1. In `src/server.js`, find the commented `trust proxy` line (line 72) and uncomment it:
    ```js
    app.set('trust proxy', 1);
    ```
@@ -190,6 +215,21 @@ If you put nginx or Caddy in front of the app (e.g. for HTTPS termination):
    ```
 
 3. Set `CORS_ORIGIN` to your domain or IP in `.env`.
+
+For additional production hardening steps, see [docs/security.md](security.md#production-hardening).
+
+---
+
+## Health Monitoring
+
+The `/api/health` endpoint is suitable for uptime monitors and load balancer health checks:
+
+```
+GET http://localhost:3000/api/health
+→ { "status": "ok", "uptime": 42, "timestamp": "2025-01-01T12:00:00.000Z" }
+```
+
+Response is always `200 OK` with `Cache-Control: no-store` if the server is up. Use this endpoint for PM2 health checks or external monitoring services.
 
 ---
 

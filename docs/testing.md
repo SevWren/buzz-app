@@ -96,7 +96,8 @@ Tests every Socket.IO event handler in isolation using a mock `io` and mock `soc
 Tests `appendMessage` and `readRecentMessages` using mocked `fs/promises`.
 - `appendMessage`: creates `data/` dir if missing, writes valid JSON lines, swallows all errors gracefully (including `mkdir` failures), preserves unicode, writes `utf8` encoding
 - `readRecentMessages`: returns `[]` for ENOENT and all other read errors (non-ENOENT logged with `warn`), parses lines correctly, skips malformed lines, respects the `limit` parameter
-- Edge cases: `limit=0` returns all records (`slice(-0) === slice(0)` in JS), `limit > total` returns all lines
+- Edge cases: `limit=0` returns all records (`slice(-0) === slice(0)` in JavaScript — do **not** call `readRecentMessages(0)` to get zero records; it returns everything), `limit > total` returns all lines
+- **Malformed lines are silently skipped.** `readRecentMessages` catches `JSON.parse` exceptions per-line. A corrupted or manually edited `data/messages.jsonl` will omit the bad lines without raising an error. Only lines with all required fields (`id`, `ts`, `direction`, `type`, `socketId`, `payload`) are returned.
 
 ### `audioAlert.test.js`
 
@@ -240,3 +241,5 @@ Using port `:0` is critical — it eliminates port conflicts in CI where multipl
 - Integration tests use port `:0` — no port configuration needed
 - Coverage report written to `coverage/` — not committed to git
 - `vitest.config.js` sets `testTimeout: 10_000` ms — adjust if your CI environment is slow
+
+Run `npm test` to see the current test count. The count in this document may lag behind actual test additions.

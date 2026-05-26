@@ -53,7 +53,7 @@ public/
   client.js               -- Son's Socket.IO browser client
   admin.html              -- Dad's admin panel HTML/CSS
   admin.js                -- Dad's admin panel browser client (ES module)
-  matrix.js               -- Matrix rain animation (cosmetic only)
+  matrix.js               -- Matrix shutdown animation engine; triggered by server-shutdown event; exports MatrixRain (canvas rain), GlitchSequencer (6-phase shutdown orchestrator), randChar(); see docs/matrix-shutdown.md
 
 data/
   messages.jsonl          -- Append-only persistent message log (auto-created; not in git)
