@@ -30,7 +30,12 @@ vi.mock('../../src/lib/audioAlert.js', () => ({
 function buildSocketServer() {
   const app = express();
   const httpServer = createServer(app);
-  const io = new Server(httpServer, { cors: { origin: '*' } });
+  // Mirror the production server's transport restriction so tests exercise the
+  // same transport path that browser clients use.
+  const io = new Server(httpServer, {
+    cors:       { origin: '*' },
+    transports: ['websocket'],   // matches src/server.js — no polling fallback
+  });
 
   // Mirror the io.use() middleware from server.js — sets isAdmin + joins admin room (BUG-02)
   io.use((socket, next) => {
@@ -104,6 +109,20 @@ describe('Socket.IO integration', () => {
     it('client receives a unique socket id', () => {
       expect(typeof client.id).toBe('string');
       expect(client.id.length).toBeGreaterThan(0);
+    });
+
+    // Regression test: server rejects polling transport (transport mismatch bug).
+    // The server sets transports:['websocket']; any client that attempts HTTP
+    // long-polling first receives "Transport unknown" (Engine.IO code 0).
+    // Both public/client.js and public/admin.js must specify transports:['websocket']
+    // to avoid this failure mode.
+    it('rejects a client that uses polling transport', async () => {
+      const pollingClient = Client(`http://localhost:${port}`, {
+        forceNew:   true,
+        transports: ['polling'],   // simulates a client that never sets websocket
+      });
+      await expect(waitForConnect(pollingClient)).rejects.toBeDefined();
+      pollingClient.disconnect();
     });
   });
 

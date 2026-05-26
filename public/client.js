@@ -1,6 +1,11 @@
 import { GlitchSequencer } from './matrix.js';
 
 const socket = io({
+  // Must match the server's transports:['websocket'] setting in server.js.
+  // Without this the Socket.IO-client defaults to ['polling','websocket'] and
+  // opens an HTTP long-poll handshake first — the server rejects it immediately
+  // with "Transport unknown" (Engine.IO code 0), causing the reconnecting loop.
+  transports:           ['websocket'],
   reconnectionDelayMax: 10_000,
   // Limit reconnection attempts to prevent the client reconnecting indefinitely
   // to a potentially rogue or unavailable server.
