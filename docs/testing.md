@@ -96,7 +96,7 @@ Tests every Socket.IO event handler in isolation using a mock `io` and mock `soc
 Tests `appendMessage` and `readRecentMessages` using mocked `fs/promises`.
 - `appendMessage`: creates `data/` dir if missing, writes valid JSON lines, swallows all errors gracefully (including `mkdir` failures), preserves unicode, writes `utf8` encoding
 - `readRecentMessages`: returns `[]` for ENOENT and all other read errors (non-ENOENT logged with `warn`), parses lines correctly, skips malformed lines, respects the `limit` parameter
-- Edge cases: `limit=0` returns all records (`slice(-0) === slice(0)` in JavaScript — do **not** call `readRecentMessages(0)` to get zero records; it returns everything), `limit > total` returns all lines
+- Edge cases: `limit=0` returns `[]` — guarded by `if (limit === 0) return []` (BUG-03 fix; the pre-fix `slice(-0) === slice(0)` behaviour is no longer present), `limit > total` returns all lines
 - **Malformed lines are silently skipped.** `readRecentMessages` catches `JSON.parse` exceptions per-line. A corrupted or manually edited `data/messages.jsonl` will omit the bad lines without raising an error. Only lines with all required fields (`id`, `ts`, `direction`, `type`, `socketId`, `payload`) are returned.
 
 ### `audioAlert.test.js`

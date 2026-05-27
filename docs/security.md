@@ -33,7 +33,7 @@ Every Socket.IO event payload is validated against a Zod schema before any actio
 Validated constraints:
 - Text fields: trimmed, 1–500 characters
 - `quick-need.need`: enum (only 5 allowed values)
-- `set-status.emoji` and `.label`: separate enums that must be from a fixed list
+- `set-status.emoji` and `.label`: validated as **atomic pairs** — only the 6 defined combinations are accepted (e.g. `{ emoji: "😴", label: "Tired" }`); mismatched but individually valid values are rejected
 - `location-ping`: lat/lng/accuracy are `number` with min/max bounds
 - `battery-low.level`: `number` 0–1 or `null`
 - `countdown-start.minutes`: literal union `5 | 10 | 15 | 30`
@@ -139,7 +139,7 @@ Valid values for `CORS_ORIGIN`:
 - `*` — wildcard, any origin (default, acceptable for home networks)
 - An exact origin: must match the pattern `^https?://[^/]+$` — a full scheme + host + optional port, no trailing slash, no path. Examples: `http://192.168.1.50:3000`, `https://myapp.local`
 
-Note: `CORS_ORIGIN` has no `.trim()` in the Zod schema (intentional — whitespace in a CORS origin is almost always a typo). A value with leading or trailing whitespace will fail validation and the server will exit with a config error.
+Note: `CORS_ORIGIN` has no `.trim()` in the Zod schema (intentional). Spaces-only values and values with **leading** spaces fail the `^https?://` regex and cause a server exit. However, a value with a **trailing** space on an otherwise-valid host (e.g. `http://192.168.1.50:3000 `) passes the refine check — the space becomes part of the configured origin string. Always copy-paste CORS origins carefully to avoid trailing whitespace.
 
 ### No persistent admin session / token
 
@@ -158,7 +158,7 @@ If you ever expose Buzz App to the internet or a less-trusted network:
    CORS_ORIGIN=http://192.168.1.50:3000
    ```
 
-3. **Enable Content Security Policy** — remove `contentSecurityPolicy: false` from the Helmet call in `server.js` and configure a policy appropriate for your deployment.
+3. **Tighten the Content Security Policy** — the app ships with an active CSP (see "Security headers via Helmet" above). To harden further, remove `'unsafe-inline'` from `style-src` by extracting the inline `<style>` blocks in `index.html` and `admin.html` to external `.css` files.
 
 4. **Uncomment `trust proxy`** in `server.js`:
    ```js
@@ -170,7 +170,7 @@ If you ever expose Buzz App to the internet or a less-trusted network:
 
 6. **Restrict the admin panel** — consider an additional authentication layer (Basic Auth, mTLS, VPN) rather than relying on IP-based localhost check when not on the same machine.
 
-7. **Log rotation** — `data/messages.jsonl` grows indefinitely. Set up logrotate or a cron job to archive or truncate it periodically.
+7. **Log retention** — the server auto-rotates `messages.jsonl` at 10 MB (keeps one `.jsonl.1` archive). For longer retention, configure external `logrotate` or a monthly cron job (see `docs/deployment.md`).
 
 ---
 
@@ -187,7 +187,7 @@ If you ever expose Buzz App to the internet or a less-trusted network:
 
 ## Data Privacy
 
-- `data/messages.jsonl` is excluded from `.gitignore` and is never committed to the repository.
+- `data/messages.jsonl` is covered by `.gitignore` (the `data/` directory is listed there) and is never committed to the repository.
 - The file contains all message text, location coordinates, and battery levels in plaintext. It is stored on the server machine's local filesystem.
 - No data is ever sent to a third party. The app has no analytics, telemetry, or cloud connectivity.
 - Location data (latitude, longitude, accuracy) is stored in the log. If this is a concern, the `location-ping` handler can be removed.

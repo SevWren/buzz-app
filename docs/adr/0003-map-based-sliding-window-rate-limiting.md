@@ -1,4 +1,4 @@
-# 0003 — Map-based Sliding-Window Rate Limiting
+# 0003 — Map-based Fixed-Window Rate Limiting
 
 ## Status
 
@@ -26,7 +26,7 @@ Rate limiting must be per-socket (not per-IP) because the phone may share an IP 
 
 - **`express-rate-limit`** — HTTP-level only; cannot apply to Socket.IO events
 - **`rate-limiter-flexible`** — full-featured; supports Redis, in-memory, and per-key strategies; adds a production dependency
-- **Custom Map-based sliding window** — 15-line implementation; no dependency; fully controllable
+- **Custom Map-based fixed-window counter** — ~15-line implementation; no dependency; fully controllable
 
 ## Decision Outcome
 
@@ -34,14 +34,14 @@ Chosen option: **Custom `makeRateLimiter()` factory using in-process Maps**
 
 ## Rationale
 
-The per-socket, per-event-type requirement is not well-served by HTTP middleware libraries. `rate-limiter-flexible` would work but introduces a dependency for a 15-line problem. The custom implementation in `src/handlers/socket.js` is:
+The per-socket, per-event-type requirement is not well-served by HTTP middleware libraries. `rate-limiter-flexible` would work but introduces a dependency for a ~15-line problem. The custom implementation in `src/handlers/socket.js` is a **fixed-window counter**:
 
-1. A `makeRateLimiter(maxCount, windowMs)` factory that returns a function `(socketId) => boolean`
-2. Internally maintains a `Map<socketId, timestamp[]>` of recent event timestamps
-3. On each call: filters out timestamps older than `windowMs`, then checks if count < `maxCount`
-4. Registered as a `disconnect` handler to delete the socket's entry from every limiter Map
+1. `makeRateLimiter()` — zero arguments; returns an object with `isLimited(socketId, { windowMs, max })` and `remove(socketId)`
+2. Internally maintains a `Map<socketId, { count: number, resetAt: number }>` — one entry per socket per limiter instance
+3. On each call: if no entry exists, or `now >= resetAt`, reset `{ count: 1, resetAt: now + windowMs }`; otherwise increment `count`. Return `true` (rate-limited) if `count >= max`
+4. `remove(socketId)` is called in the `disconnect` handler to delete every limiter entry for that socket
 
-All 8 rate limiters are instantiated at module load time and share their Maps across all socket connections.
+All 9 rate limiters are instantiated at module load time and share their Maps across all socket connections.
 
 Rate limit values (from `src/handlers/socket.js`):
 
@@ -55,21 +55,22 @@ Rate limit values (from `src/handlers/socket.js`):
 | `battery-low` | 2 | 60 s |
 | `countdown-start` | 5 | 10 s |
 | `send-reply` (admin) | 20 | 5 s |
+| `admin-mark-read` (admin) | 10 | 5 s |
 
 ## Consequences
 
 ### Positive
 - Zero external dependencies
-- O(1) per-event amortised (Map lookup + array filter)
+- True O(1) per event — single Map lookup + integer compare, no array iteration
 - Easy to test: mock `socketId` strings and call the limiter directly
 - Per-socket isolation: one phone exhausting its buzz limit does not affect another socket
 
 ### Negative
 - State is not shared across worker processes — if the server were clustered, each worker would have independent counters. This is not a concern for this app (single-process deployment)
-- Timestamp arrays grow to `maxCount` elements maximum per socket; negligible memory
+- Fixed-window means a burst at window boundary (max events at end of window + max events at start of next window) is theoretically possible — acceptable for the abuse-prevention use case here
 
 ### Risks
-- A socket that never disconnects (long-lived connection) keeps its Map entry indefinitely. Entries are bounded by `maxCount` timestamps, so memory growth is constant per socket
+- A socket that never disconnects (long-lived connection) keeps its Map entry indefinitely. Each entry is a single `{ count, resetAt }` object — constant memory per limiter per socket, negligible at this scale
 
 ## Related Decisions
 

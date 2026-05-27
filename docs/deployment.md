@@ -93,7 +93,7 @@ To clear the log, delete `data/messages.jsonl`. The server creates a new empty f
 
 ### Data retention
 
-The file grows indefinitely. For long-running deployments, set up log rotation:
+The server auto-rotates `messages.jsonl` at 10 MB — it is renamed to `messages.jsonl.1` and a fresh log is started automatically (`maybeRotate()` in `src/lib/messageLog.js`). One archive is kept. For longer retention or multi-archive policies, configure external rotation:
 
 **Linux (logrotate):**
 ```

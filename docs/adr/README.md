@@ -6,12 +6,13 @@ This directory contains Architecture Decision Records (ADRs) for Buzz App. ADRs 
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [0001](0001-socket-io-over-raw-websockets.md) | Socket.IO over raw WebSockets | Accepted | 2025-05-26 |
-| [0002](0002-jsonl-append-only-log.md) | JSONL append-only log over a database | Accepted | 2025-05-26 |
-| [0003](0003-map-based-sliding-window-rate-limiting.md) | Map-based sliding-window rate limiting | Accepted | 2025-05-26 |
-| [0004](0004-fire-and-forget-for-side-effects.md) | Fire-and-forget for messageLog and audioAlert | Accepted | 2025-05-26 |
-| [0005](0005-two-layer-admin-auth.md) | Two-layer admin authentication | Accepted | 2025-05-26 |
-| [0006](0006-vanilla-frontend-no-build-step.md) | Vanilla HTML/CSS/JS frontend — no build step | Accepted | 2025-05-26 |
+| [0001](0001-socket-io-over-raw-websockets.md) | Socket.IO over raw WebSockets | Accepted | 2026-05-26 |
+| [0002](0002-jsonl-append-only-log.md) | JSONL append-only log over a database | Accepted | 2026-05-26 |
+| [0003](0003-map-based-sliding-window-rate-limiting.md) | Map-based sliding-window rate limiting | Accepted | 2026-05-26 |
+| [0004](0004-fire-and-forget-for-side-effects.md) | Fire-and-forget for messageLog and audioAlert | Accepted | 2026-05-26 |
+| [0005](0005-two-layer-admin-auth.md) | Two-layer admin authentication | Accepted | 2026-05-26 |
+| [0006](0006-vanilla-frontend-no-build-step.md) | Vanilla HTML/CSS/JS frontend — no build step | Accepted | 2026-05-26 |
+| [0007](0007-admin-room-scoping-for-inbound-events.md) | Admin room scoping for inbound Socket.IO events | Accepted | 2026-05-26 |
 
 ## Status lifecycle
 

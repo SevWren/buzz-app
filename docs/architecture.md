@@ -181,9 +181,10 @@ Key non-default parameters set in `src/server.js`:
 
 ### Client reconnection
 
-`public/client.js` configures Socket.IO client reconnection:
+`public/client.js` and `public/admin.js` configure Socket.IO client reconnection:
 - `reconnectionAttempts: 10` — the client stops trying after 10 failed attempts. After this, the connection dot turns red and stays red. The user must refresh the page to reconnect.
 - `reconnectionDelayMax: 10_000` ms — maximum 10 s between attempts (exponential backoff capped here).
+- **`transports: ['websocket']`** — must match the server's `transports: ['websocket']` setting. If the client omits this, Socket.IO-client defaults to `['polling', 'websocket']`, starts with an HTTP long-poll handshake that the server immediately rejects (Engine.IO error code 0), and enters an infinite reconnect loop with a permanent yellow "Reconnecting…" dot. Set in both `public/client.js` and `public/admin.js`.
 
 Rate limit values for all socket events: see [`docs/security.md`](security.md#per-socket-rate-limiting) and [ADR-0003](adr/0003-map-based-sliding-window-rate-limiting.md).
 

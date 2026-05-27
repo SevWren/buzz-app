@@ -4,7 +4,7 @@ Prioritised register of known code, architecture, security, and documentation de
 
 **Scoring formula:** `(Impact + Risk) × (6 - Effort)` on a 1–5 scale per dimension. Higher score = more urgent.
 
-Last updated: 2025-05-26
+Last updated: 2026-05-26
 
 ---
 
@@ -12,9 +12,9 @@ Last updated: 2025-05-26
 
 | Score | Category | Item |
 |-------|----------|------|
-| 24 | Infrastructure | `data/messages.jsonl` grows indefinitely — no log rotation |
+| 6 | Infrastructure | `data/messages.jsonl` auto-rotates at 10 MB (single `.jsonl.1` archive) — no multi-archive or configurable retention |
 | 22 | Architecture | Matrix shutdown audit: verify all 45 issues are addressed in `matrix.js` |
-| 20 | Code | `readRecentMessages(0)` returns ALL records due to JS `.slice(-0)` edge case |
+| — | Code | `readRecentMessages(0)` — **resolved** (BUG-03 added `if (limit === 0) return []` guard) |
 | 20 | Code | `CORS_ORIGIN` has no `.trim()` — whitespace passes `.min(1)` validation |
 | 18 | Security | CSP `'unsafe-inline'` in `style-src` required due to no build step |
 | 15 | Architecture | No ADR for graceful shutdown sequence |
@@ -28,19 +28,18 @@ Last updated: 2025-05-26
 
 ## Detailed Items
 
-### Score 24 — `data/messages.jsonl` grows indefinitely
+### Score 6 — `data/messages.jsonl` single-archive rotation
 
 **Category:** Infrastructure
-**Impact:** 3 — large files slow down `readRecentMessages` on admin panel load
-**Risk:** 3 — in long-running deployments the file can become multi-GB
-**Effort:** 2 — `logrotate` configuration or a cron archive script
+**Impact:** 1 — built-in 10 MB rotation exists; gap is single archive only
+**Risk:** 2 — high-volume deployments lose history older than the latest `.jsonl.1`
+**Effort:** 2 — external `logrotate` or a cron job for multi-archive retention
 
-The persistent message log is append-only with no automatic rotation. For occasional home use this is acceptable; for a family that uses the app daily for months, the file can grow significantly.
+`src/lib/messageLog.js` calls `maybeRotate()` after each write: when the file exceeds 10 MB it is renamed to `messages.jsonl.1` and a fresh log begins. Only one archive is kept — the previous `.jsonl.1` is overwritten on the next rotation.
 
 **Remediation:**
-- Linux: configure `logrotate` with `copytruncate` option (see `docs/deployment.md` for an example)
-- Any OS: a scheduled task (cron / Task Scheduler) that archives and truncates monthly
-- Long-term: add a `--trim-log` CLI option or a log size cap to `messageLog.js`
+- For longer retention: configure external `logrotate` with `rotate 4` or similar (see `docs/deployment.md`)
+- Any OS: a monthly cron/Task Scheduler job that archives with a timestamp suffix
 
 ---
 
@@ -57,21 +56,9 @@ The persistent message log is append-only with no automatic rotation. For occasi
 
 ---
 
-### Score 20 — `readRecentMessages(0)` returns all records
+### ~~Score 20 — `readRecentMessages(0)` returns all records~~ RESOLVED
 
-**Category:** Code
-**Impact:** 2 — callers expecting zero records get everything; admin history endpoint passes 100 so this is not triggered in production
-**Risk:** 3 — could cause unexpected behaviour if a new caller passes 0 intending an empty result
-**Effort:** 2 — one-line guard
-
-`Array.prototype.slice(-0)` is equivalent to `slice(0)` in JavaScript — it returns the full array. `readRecentMessages(0)` therefore returns all records, not zero.
-
-This is **intentional per current design** and documented in `CLAUDE.md` and `docs/testing.md`. However it is a footgun for future callers.
-
-**Remediation options:**
-- Add `if (limit === 0) return []` at the top of `readRecentMessages`
-- Or add explicit JSDoc documenting the edge case and marking it as a known trap
-- Decision: intentional behaviour — mark as "won't fix" and ensure documentation is sufficient
+**Resolved in BUG-03.** `src/lib/messageLog.js` now has `if (limit === 0) return []` as the first line of `readRecentMessages`. The `slice(-0) === slice(0)` footgun no longer applies. Removed from active debt.
 
 ---
 
@@ -82,9 +69,9 @@ This is **intentional per current design** and documented in `CLAUDE.md` and `do
 **Risk:** 3 — easy misconfiguration, hard to debug (server starts successfully but CORS is wide open)
 **Effort:** 2 — add `.trim()` to the schema
 
-The `CORS_ORIGIN` Zod schema intentionally omits `.trim()` (noted in `CLAUDE.md`). The reasoning is that a value with whitespace is almost certainly a typo and should fail validation — but a whitespace-only string like `"   "` passes `.min(1)` without `.trim()`.
+The `CORS_ORIGIN` Zod schema intentionally omits `.trim()`. Spaces-only values and leading-space values fail the refine regex and cause a server exit (correct). However, a **trailing-space** value on an otherwise-valid host (e.g. `http://192.168.1.50:3000 `) passes the refine check — the space becomes part of the configured origin string, causing CORS mismatches that are difficult to debug.
 
-**Remediation:** This is marked intentional in `CLAUDE.md`. The fix would change the validation contract. Decision: document explicitly as a known footgun, add a test case for whitespace-only `CORS_ORIGIN`.
+**Remediation:** The missing `.trim()` is intentional (see `CLAUDE.md`). The real footgun is trailing spaces. Options: (a) document clearly in ops guides, (b) add a test for trailing-space CORS origin to lock in the known behaviour, (c) add a specific trailing-whitespace check to the `.refine()` if the risk is deemed unacceptable.
 
 ---
 
@@ -182,7 +169,7 @@ The `doc-maintenance` skill prescribes a subdirectory structure (`docs/architect
 
 | Item | Reason |
 |------|--------|
-| `readRecentMessages(0)` returns all records | Documented behaviour; callers should not pass `0`. Adding a guard changes semantics. |
+| ~~`readRecentMessages(0)` returns all records~~ | **Resolved** — BUG-03 added `if (limit === 0) return []` guard |
 | `CORS_ORIGIN` no `.trim()` | Intentional: whitespace in a CORS origin is a typo; the server should exit, not silently trim |
 | `'unsafe-inline'` in `style-src` CSP | No build step; would require significant refactoring. Acceptable for localhost admin tool. |
 | Flat `docs/` structure | Simpler for small project; not worth the migration cost |

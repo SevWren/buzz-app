@@ -41,7 +41,7 @@ SQLite would require a native module (compilation issues on Windows are common) 
 
 The only read operation (`readRecentMessages(limit)`) reads the last N lines via `fs.readFile` and splits on newlines — acceptable since history is read only on admin panel load, not on every event.
 
-**Known edge case:** `readRecentMessages(0)` returns all records because `Array.prototype.slice(-0)` is equivalent to `slice(0)` in JavaScript. This is documented and tested in `tests/unit/messageLog.test.js`. Callers should not pass `0` to get zero records.
+**Previously known edge case (resolved):** `readRecentMessages(0)` previously returned all records because `Array.prototype.slice(-0)` is equivalent to `slice(0)` in JavaScript. Fixed in BUG-03 — `src/lib/messageLog.js` now returns `[]` immediately when `limit === 0`.
 
 ## Consequences
 
@@ -55,7 +55,7 @@ The only read operation (`readRecentMessages(limit)`) reads the last N lines via
 ### Negative
 - No indexing — reading last N records requires loading the full file
 - No transactions — a partial write during a crash could leave a malformed line (handled: `readRecentMessages` silently skips malformed lines)
-- File grows indefinitely — log rotation must be configured externally (see `docs/tech-debt.md`)
+- File auto-rotates at 10 MB (renamed to `.jsonl.1`; single archive kept) — multi-archive retention requires external `logrotate` or a cron job (see `docs/deployment.md`)
 
 ### Risks
 - Very high message volume could make the file large enough that `readRecentMessages` becomes slow. Acceptable for local-network family use

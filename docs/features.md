@@ -75,7 +75,6 @@ Tap this button to send your GPS coordinates to Dad.
 
 **Note:** Location sharing requires the browser to have permission. If you tapped Deny previously, go to your browser's site settings and re-allow location for this page.
 
-**Note on location freshness:** The browser may return a cached GPS fix up to 30 seconds old. If you need to send your exact real-time position, wait briefly and tap again.
 
 ---
 

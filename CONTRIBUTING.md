@@ -26,7 +26,7 @@ Open `http://localhost:3000` for the son's UI and `http://localhost:3000/admin` 
 ```bash
 npm test                  # run all tests once
 npm run test:watch        # re-run on file changes
-npm run test:coverage     # run with coverage report (80% thresholds enforced)
+npm run test:coverage     # coverage report (thresholds: 80% lines/functions/statements, 75% branches — see vitest.config.js)
 ```
 
 See [`docs/testing.md`](docs/testing.md) for the full test structure, mocking strategy, and how to write tests for new features.
