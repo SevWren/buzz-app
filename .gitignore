@@ -19,3 +19,10 @@ public/*.tmp
 .claude/plans/
 # Vitest already excludes .agents/** and .claude/** via vitest.config.js (BUG-13 fix)
 # so no test-asset pollution risk from tracking .claude/skills/.
+
+# Git ingest
+digest.txt
+codebase.txt
+commits_file_changes.txt
+commits.txt
+7_day_commit.bat
