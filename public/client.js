@@ -37,6 +37,21 @@ socket.on('disconnect', (reason) => {
   setConnState('disconnected', 'Disconnected');
   setButtons(false);
   addLog('system', `Disconnected: ${reason}`);
+
+  // Don't trigger matrix when the client intentionally disconnected itself.
+  if (reason === 'io client disconnect') return;
+
+  // Delay to avoid showing the Matrix for brief reconnection blips.
+  // If, after 1200ms, the socket is still disconnected, show the Matrix takeover.
+  setTimeout(() => {
+    if (!socket.connected) {
+      // Make #matrix-scene scanlines visible (same as server-shutdown flow)
+      document.getElementById('matrix-scene').classList.add('active');
+
+      // Trigger sequencer; respect prefers-reduced-motion by default.
+      sequencer.trigger('Connection lost — attempting to reconnect or offline.', { forceAnimation: false });
+    }
+  }, 1200);
 });
 
 socket.on('connect_error', () => {
@@ -101,7 +116,7 @@ socket.on('server-shutdown', ({ message }) => {
   sequencer.trigger(message ?? 'Server is shutting down.');
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────[...]
 
 // Whitelist of valid log types.  Building a class name from an unvalidated
 // server-supplied string would allow a compromised server to inject arbitrary
