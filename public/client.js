@@ -113,7 +113,32 @@ socket.on('server-shutdown', ({ message }) => {
   // Also make #matrix-scene scanlines visible
   document.getElementById('matrix-scene').classList.add('active');
 
-  sequencer.trigger(message ?? 'Server is shutting down.');
+  const shutdownMsg = message ?? 'Server is shutting down.';
+
+  // For explicit server-initiated shutdowns we force the animation so the
+  // full Matrix sequence plays even if the OS has prefers-reduced-motion set.
+  // This is intentional: a server shutdown is a critical UI state.
+  sequencer.trigger(shutdownMsg, { forceAnimation: true }).catch(() => {});
+
+  // Watchdog: if the canvases never became visible (blank screen), fall back
+  // to the static draw so the user still sees the shutdown message.
+  setTimeout(() => {
+    const rCanvas = document.getElementById('matrix-rain-canvas');
+    const mCanvas = document.getElementById('matrix-msg-canvas');
+    const active = (rCanvas && rCanvas.classList.contains('active')) ||
+                   (mCanvas && mCanvas.classList.contains('active'));
+    if (!active) {
+      // Prefer the sequencer's internal static-draw helper if available.
+      if (typeof sequencer._showStatic === 'function') {
+        try { sequencer._showStatic(shutdownMsg); } catch (_) { /* ignore */ }
+      } else {
+        // Best-effort fallback: make canvases visible so the CSS shows a black
+        // background and at least the matrix scene overlay is present.
+        if (rCanvas) rCanvas.classList.add('active');
+        if (mCanvas) mCanvas.classList.add('active');
+      }
+    }
+  }, 2500);
 });
 
 // ────────────────────────────────────────────────────────────────[...]
