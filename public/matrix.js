@@ -1,24 +1,20 @@
 /**
- * matrix.js — Matrix rain engine + shutdown sequencer
+ * matrix.js — Matrix rain + shutdown thing for server shutdowns/disconnects client side
  *
- * Exports:
- *   class MatrixRain      — canvas rain engine
- *   class GlitchSequencer — orchestrates the full 6-phase shutdown sequence
- *   function randChar()   — returns one random Matrix character
+ * has the MatrixRain class for the falling letters
+ * and GlitchSequencer for the whole shutdown sequence
+ * also a randChar function that picks random matrix chars
  *
- * All coordinates are in CSS pixels. DPR scaling is applied internally.
- * Load via <script type="module"> in client.js.
+ * Load it with <script type="module"> in client.js
  */
 
-// ─── Character pools ─────────────────────────────────────────────────────────
-
+// the different characters we can use
 const KATAKANA = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ';
 const LATIN   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DIGITS  = '0123456789';
 const SYMBOLS = '@#$%&*!?<>/\\|[]{}';
 
-// Two-step weighted selection gives exact 50/20/20/10 distribution regardless
-// of pool sizes — flat-string uniform draw would give wrong weights (audit #3).
+// picks a random character, tries to do more japanese ones
 export function randChar() {
   const r = Math.random();
   if (r < 0.50) return KATAKANA[Math.floor(Math.random() * KATAKANA.length)];
@@ -27,26 +23,26 @@ export function randChar() {
   return SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
+// just a helper to go between two numbers
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t));
 }
 
+// waits a bit
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// checks if the user wants less animation
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// ─── MatrixRain ───────────────────────────────────────────────────────────────
-
-const FONT_SIZE = 13; // CSS pixels — 13px gives ~8% more columns than 14px
+// the main rain class
+const FONT_SIZE = 13; // size of the letters
 
 export class MatrixRain {
   constructor(canvas) {
     this._canvas    = canvas;
-    // alpha:false — opaque raster; faster compositing since background is always black (audit #42)
+    // get the drawing context, no transparency needed
     this._ctx       = canvas.getContext('2d', { alpha: false });
     this._cols      = [];
     this._rafId     = null;
@@ -56,19 +52,23 @@ export class MatrixRain {
     this._H         = 0;
     this._dpr       = 1;
     this._running   = false;
-    this._msgZone   = null;   // active message bounds for glow-boost interaction
-    this._spikeNext = 50;     // frames until next random glow spike
+    this._msgZone   = null;   // where the message is so we can make rain glow more
+    this._spikeNext = 50;     // how many frames until next glow thing
     this._frame     = 0;
     this._baseFont  = `${FONT_SIZE}px "Share Tech Mono", "Courier New", monospace`;
+    this._resizeTimer = null;  // for debounced resize
   }
 
   async start() {
-    // Gate on font availability — silent fallback if font load fails (audit #36)
+    // try to load the font, if it fails just use normal one
     try { await document.fonts.load(this._baseFont); } catch (_) { /* use fallback */ }
     this._resize();
-    window.addEventListener('resize', () => this._resize());
-    // Pre-warm: 60 simulated frames so streams have realistic decay trails
-    // before the canvas becomes visible (audit #15, #17)
+    // debounce resize so rapid window drags dont thrash
+    window.addEventListener('resize', () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => this._resize(), 32);
+    });
+    // run some fake frames so it doesnt start empty
     this._prewarm(60);
   }
 
@@ -84,8 +84,7 @@ export class MatrixRain {
     if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
 
-  // Register the active message zone so rain heads glow as they pass through it.
-  // Rain is never paused — it always flows behind the message canvas (z-index 1001).
+  // tell the rain where the message text is so it can glow more there
   setMessageZone(x1, x2, centerY) {
     this._msgZone = { x1, x2, centerY };
   }
@@ -94,7 +93,7 @@ export class MatrixRain {
     this._msgZone = null;
   }
 
-  // ── Private ────────────────────────────────────────────────────────────────
+  // private stuff
 
   _resize() {
     const firstInit = this._cols.length === 0;
@@ -105,7 +104,7 @@ export class MatrixRain {
     this._W   = W;
     this._H   = H;
 
-    // Apply DPR to canvas raster; keep CSS dimensions at logical size (audit #1, #2)
+    // set the canvas size for high dpi screens
     this._canvas.width        = Math.round(W * dpr);
     this._canvas.height       = Math.round(H * dpr);
     this._canvas.style.width  = W + 'px';
@@ -113,22 +112,21 @@ export class MatrixRain {
     const ctx = this._ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // measureText returns CSS-pixel values — safe to call after DPR transform (audit #6, #27)
+    // figure out how wide each column should be
     ctx.font        = this._baseFont;
     ctx.textBaseline = 'top';
     this._colStride = Math.max(8, Math.ceil(ctx.measureText('ｦ').width));
 
     if (firstInit) {
-      // First call only: build all columns fresh
+      // first time, make all the columns
       this._initCols(W, H);
       return;
     }
 
-    // Subsequent resize (alt-tab, fullscreen, window resize): PRESERVE existing column
-    // state so the rain never restarts from scratch. Only add/trim as needed.
+    // if window size changed, keep the old columns and just add or remove some
     const needed = Math.ceil(W / this._colStride) + 2;
     for (let i = 0; i < this._cols.length; i++) {
-      this._cols[i].x = i * this._colStride; // re-anchor x in case stride changed
+      this._cols[i].x = i * this._colStride; // update the x position
     }
     while (this._cols.length < needed) {
       this._cols.push(this._makeCol(this._cols.length * this._colStride, H, false));
@@ -149,8 +147,7 @@ export class MatrixRain {
     const streamLen = this._randStreamLen(H);
     return {
       x,
-      // Staggered: spread headY within [0, H] so the screen fills immediately
-      // (no above-screen gap period — that was causing empty columns at startup)
+      // start them at random heights so the screen fills up right away
       headY:          staggered ? Math.random() * H : 0,
       speed:          0.8 + Math.random() * 2.2,
       streamLen,
@@ -163,11 +160,9 @@ export class MatrixRain {
   }
 
   _randStreamLen(H) {
-    // Streams must be at least full-screen height so every column cell is
-    // always filled — short streams left 70–90% of each column black.
+    // make the streams long enough to cover the whole screen
     const screenRows = Math.ceil((H || this._H || 900) / FONT_SIZE);
-    // Small variation (0–20 extra rows) so adjacent columns have slightly
-    // different tail positions, avoiding a uniform horizontal cutoff line.
+    // add a little extra so they dont all end at the same place
     return screenRows + 2 + Math.floor(Math.random() * 20);
   }
 
@@ -186,8 +181,7 @@ export class MatrixRain {
         col.headY += col.speed;
         col.mutateTimer++;
         if (col.mutateTimer >= col.mutateInterval) { this._mutateCol(col); col.mutateTimer = 0; }
-        // Reset when HEAD exits screen bottom — not when tail exits.
-        // Old condition (tail exits) left the column dark for seconds between passes.
+        // if it goes off the bottom, reset it
         if (col.headY > H + FONT_SIZE * 4) this._resetCol(col, H);
       }
       ctx.shadowBlur  = 0;
@@ -199,7 +193,7 @@ export class MatrixRain {
     if (!this._running) return;
     const elapsed = ts - this._lastTs;
     this._lastTs  = ts;
-    // Cap dt at 3× to prevent teleportation after tab switch (audit #13)
+    // dont let the time jump too much if the tab was in background
     const dt = Math.min(elapsed / 16.67, 3.0);
 
     const ctx = this._ctx;
@@ -207,13 +201,13 @@ export class MatrixRain {
     const H   = this._H;
     this._frame++;
 
-    // Decay rect — scaled by dt so trail length is frame-rate independent (audit #10)
+    // fade the old stuff a bit so we get trails
     ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(0.15, 0.05 * dt)})`;
     ctx.fillRect(0, 0, W, H);
     ctx.font        = this._baseFont;
     ctx.textBaseline = 'top';
 
-    // Random glow spike every ~50 frames (audit #7, #14)
+    // every once in a while make one column glow brighter
     this._spikeNext -= dt;
     if (this._spikeNext <= 0) {
       this._spikeNext = 40 + Math.random() * 20;
@@ -222,7 +216,7 @@ export class MatrixRain {
     }
 
     for (const col of this._cols) {
-      // Glow spike countdown (audit #7)
+      // count down the glow spike
       if (col.glowSpikeTimer > 0) {
         col.glowSpikeTimer--;
         if (col.glowSpikeTimer === 0) col.glowIntensity = 0.6 + Math.random() * 0.4;
@@ -242,20 +236,21 @@ export class MatrixRain {
 
   _drawCol(ctx, col, H, dt) {
     const spiking = col.glowSpikeTimer > 0;
+    let headDrawn = false;
+
     for (let j = 0; j < col.streamLen; j++) {
       const charY = col.headY - j * FONT_SIZE;
       if (charY + FONT_SIZE < 0 || charY > H) continue;
 
-      const t          = j / col.streamLen;           // 0=head, 1=tail
-      // Minimum brightness 0.05 at tail keeps every cell faintly visible —
-      // prevents hard black cutoff at stream tail (reference image has no empty cells).
+      const t          = j / col.streamLen;           // 0 is the front, 1 is the end
+      // keep the end a little visible so it doesnt look empty
       const brightness = Math.max(0.05, 1 - t);
-      const green      = Math.floor(lerp(30, 255, brightness));
+      // integer conversion, same result as floor(lerp(30,255,brightness))
+      const green      = (30 + (225 * brightness)) | 0;
       const alpha      = lerp(0.10, 0.92, brightness);
 
       if (j === 0) {
-        // Light-interaction: when head passes through the message zone, boost glow
-        // so rain visibly "interacts" with the message text rather than ignoring it.
+        // if the head is near the message, make it glow more
         let effectiveGlow = col.glowIntensity;
         if (this._msgZone) {
           const mz = this._msgZone;
@@ -266,19 +261,26 @@ export class MatrixRain {
             }
           }
         }
-        // Head — glow only on leading char, keeps shadow call count low (audit #9)
+        // the front character gets the glow - only set shadow here
         ctx.shadowBlur  = (spiking ? 22 : 15) * effectiveGlow;
         ctx.shadowColor = '#00ff41';
         ctx.fillStyle   = (spiking || effectiveGlow > 1.2) ? 'rgb(255,255,255)' : 'rgb(230,255,230)';
+        ctx.fillText(col.chars[j], col.x, charY);
+        // turn shadow off immediately after the head so trailing chars never pay the cost
+        ctx.shadowBlur  = 0;
+        ctx.shadowColor = 'transparent';
+        headDrawn = true;
       } else {
-        ctx.shadowBlur = 0;  // reset each char so no bleed to next column (audit #11)
-        ctx.fillStyle  = `rgba(0,${green},${Math.floor(green * 0.08)},${alpha.toFixed(2)})`;
+        // trailing characters - shadow is already 0
+        ctx.fillStyle = `rgba(0,${green},${(green * 0.08) | 0},${alpha.toFixed(2)})`;
+        ctx.fillText(col.chars[j], col.x, charY);
       }
-      ctx.fillText(col.chars[j], col.x, charY);
     }
-    // Explicit reset after every column (audit #11)
-    ctx.shadowBlur  = 0;
-    ctx.shadowColor = 'transparent';
+    // safety reset if no head was drawn this column (offscreen head)
+    if (!headDrawn) {
+      ctx.shadowBlur  = 0;
+      ctx.shadowColor = 'transparent';
+    }
   }
 
   _mutateCol(col) {
@@ -289,21 +291,25 @@ export class MatrixRain {
   }
 
   _resetCol(col, H) {
-    // headY = 0: restart immediately from screen top with no above-screen gap.
-    // Old -FONT_SIZE*2 caused the column to be black for the full travel time
-    // above the screen before any characters appeared — that was the source of
-    // the large dark gaps visible between streams.
+    // start it back at the top
     col.headY          = 0;
     col.speed          = 0.8 + Math.random() * 2.2;
-    col.streamLen      = this._randStreamLen(H);
-    col.chars          = Array.from({ length: col.streamLen }, () => randChar());
+    const newLen       = this._randStreamLen(H);
+    // reuse the existing chars array when possible to avoid allocation
+    if (col.chars && col.chars.length >= newLen) {
+      for (let i = 0; i < newLen; i++) {
+        col.chars[i] = randChar();
+      }
+    } else {
+      col.chars = Array.from({ length: newLen }, () => randChar());
+    }
+    col.streamLen      = newLen;
     col.glowIntensity  = 0.6 + Math.random() * 0.4;
     col.glowSpikeTimer = 0;
   }
 }
 
-// ─── GlitchSequencer ─────────────────────────────────────────────────────────
-
+// the sequence that shows the messages and does the glitch stuff
 const MSG1 = 'CONNECTION LOST';
 const MSG2 = 'SERVER SHUTTING DOWN....';
 const MSG3 = 'THE SERVER HAS GONE OFFLINE.';
@@ -313,7 +319,7 @@ export class GlitchSequencer {
     this._rain    = new MatrixRain(rainCanvas);
     this._rCanvas = rainCanvas;
     this._mCanvas = msgCanvas;
-    // alpha:true on message canvas — transparent so rain shows through (audit #42)
+    // message canvas needs transparency so rain shows through
     this._mCtx    = msgCanvas.getContext('2d');
     this._a11y    = a11yEl;
     this._phase   = 'idle';
@@ -328,7 +334,7 @@ export class GlitchSequencer {
     window.addEventListener('resize', () => this._setupMsgCanvas());
   }
 
-  // forceAnimation: true bypasses prefers-reduced-motion (used by __matrixTest)
+  // forceAnimation is for testing so we can skip the reduced motion check
   async trigger(customMessage, { forceAnimation = false } = {}) {
     if (this._phase !== 'idle') return;
     this._phase = 'running';
@@ -338,46 +344,45 @@ export class GlitchSequencer {
       return;
     }
 
-    // Cancel bgdrift animation before applying matrix transition (audit #18)
+    // stop the background animation
     document.body.style.animation = 'none';
     document.body.classList.add('matrix-transition');
 
-    // Corrupt the app UI
+    // make the app look broken
     const app = document.querySelector('.app');
     if (app) app.classList.add('matrix-corrupting');
 
-    // Pre-warm rain before it becomes visible, then start RAF loop (audit #15, #17)
+    // start the rain
     await this._rain.start();
     this._rain.startLoop();
 
-    // Start message canvas draw loop
+    // start drawing the messages
     this._startMsgLoop();
 
-    // After 500ms, fade both canvases in
+    // wait a bit then show the canvases
     await sleep(500);
     this._rCanvas.classList.add('active');
     this._mCanvas.classList.add('active');
 
-    // Wait for corruption animation + rain fade-in to finish (~2200ms)
+    // wait for the corruption to finish
     await sleep(2200);
 
-    // Phase 2: density build
+    // wait a little more
     await sleep(600);
 
-    // Phase 3: first message
+    // show first message
     await this._showMessage(MSG1, false);
     await sleep(400);
 
-    // Phase 4: second message
+    // show second message
     await this._showMessage(MSG2, false);
     await sleep(400);
 
-    // Phase 5: final message — permanent hold with micro-ripple
+    // show the last message and keep it
     await this._showMessage(MSG3, true);
   }
 
-  // ── Message canvas setup ──────────────────────────────────────────────────
-
+  // set up the message canvas size
   _setupMsgCanvas() {
     const dpr = window.devicePixelRatio || 1;
     const W   = window.innerWidth;
@@ -407,18 +412,17 @@ export class GlitchSequencer {
     this._msgRaf = requestAnimationFrame(draw);
   }
 
-  // ── Per-character tick ────────────────────────────────────────────────────
-
+  // update one character
   _tickChar(ch, ctx, now) {
     if (ch.state === 'hidden' || ch.state === 'dead') return;
-    if (ch.finalChar === ' ') return; // spaces are invisible — skip (audit #20)
+    if (ch.finalChar === ' ') return; // skip spaces
 
     if (ch.state === 'assembling') this._tickAssembling(ch, now);
     if (ch.state === 'falling')    this._tickFalling(ch, now);
     if (ch.state === 'settled' && ch.microGlitch) this._tickMicroGlitch(ch, now);
 
     const pulseBlur = ch.state === 'settled'
-      // Sinusoidal glow pulse using performance.now() — frame-rate independent (audit #31)
+      // make the settled ones pulse a little
       ? 6 + 4 * Math.sin(now * 0.0025 + ch.phaseOffset)
       : 0;
 
@@ -426,7 +430,7 @@ export class GlitchSequencer {
   }
 
   _tickAssembling(ch, now) {
-    // Time-based glitch-in — does not compress at high refresh rates (audit #24)
+    // the glitch in animation for each letter
     const elapsed = now - ch.activatedAt;
     if (elapsed < 233) {
       ch.currentChar = randChar();
@@ -434,10 +438,10 @@ export class GlitchSequencer {
       ch.alpha       = 0.6;
     } else if (elapsed < 300) {
       ch.currentChar = ch.finalChar;
-      ch.flashT      = (elapsed - 233) / 67;   // 0→1 white ramp
+      ch.flashT      = (elapsed - 233) / 67;   // go white
       ch.alpha       = 1.0;
     } else if (elapsed < 370) {
-      ch.flashT      = 1 - (elapsed - 300) / 70; // 1→0 back to green
+      ch.flashT      = 1 - (elapsed - 300) / 70; // back to green
       ch.alpha       = 1.0;
     } else {
       ch.state       = 'settled';
@@ -456,19 +460,19 @@ export class GlitchSequencer {
     ch.velY         = Math.min(ch.velY + GRAVITY * dt, TERMINAL);
     ch.currentY    += ch.velY * dt;
 
-    // Alpha fades to 0 by the time char exits screen (audit #28)
+    // fade out as it falls
     const screenH      = this._H;
     const fadeDistance = Math.max(screenH * 0.5, screenH - ch.startY + screenH * 0.15);
     ch.alpha           = Math.max(0, 1 - (ch.currentY - ch.startY) / fadeDistance);
 
-    // Scramble chars during fall
+    // sometimes change the letter while falling
     if (Math.random() < 0.08) ch.currentChar = randChar();
 
     if (ch.alpha <= 0 || ch.currentY > screenH + 60) ch.state = 'dead';
   }
 
   _tickMicroGlitch(ch, now) {
-    // setTimeout-based revert — duration is in real ms, not frames (audit #32)
+    // every now and then glitch a settled letter for a second
     if (now >= ch.microGlitchAt) {
       ch.microGlitchAt    = now + 1500 + Math.random() * 2500;
       const saved         = ch.finalChar;
@@ -478,11 +482,10 @@ export class GlitchSequencer {
     }
   }
 
-  // ── Multi-pass glow renderer (audit #33) ──────────────────────────────────
-
+  // draws a glowing character with a few passes
   _drawGlowChar(ctx, char, x, y, fontSize, flashT, alpha, extraBlur) {
     if (!char || char === ' ') return;
-    // Interpolate rgb(0,255,65) → rgb(255,255,255) for lock-in flash (audit #23)
+    // mix between green and white for the flash
     const r  = Math.round(lerp(0,   255, flashT));
     const g  = 255;
     const b  = Math.round(lerp(65,  255, flashT));
@@ -490,53 +493,52 @@ export class GlitchSequencer {
     const eb = extraBlur || 0;
 
     ctx.font        = `${fontSize}px "Share Tech Mono", "Courier New", monospace`;
-    ctx.textBaseline = 'middle'; // vertically centres on y coordinate (audit #25)
+    ctx.textBaseline = 'middle'; // center it vertically
 
-    // Pass 1 — wide outer halo
+    // outer glow
     ctx.shadowBlur  = 48 + eb;
     ctx.shadowColor = `rgba(0,255,65,${(0.22 * a).toFixed(2)})`;
     ctx.fillStyle   = `rgba(0,255,65,${(0.10 * a).toFixed(2)})`;
     ctx.fillText(char, x, y);
 
-    // Pass 2 — mid glow
+    // middle glow
     ctx.shadowBlur  = 24 + eb * 0.5;
     ctx.shadowColor = `rgba(0,255,65,${(0.45 * a).toFixed(2)})`;
     ctx.fillStyle   = `rgba(0,255,65,${(0.30 * a).toFixed(2)})`;
     ctx.fillText(char, x, y);
 
-    // Pass 3 — inner glow with color interpolated for flash
+    // inner glow
     ctx.shadowBlur  = 10;
     ctx.shadowColor = `rgba(0,255,65,${a.toFixed(2)})`;
     ctx.fillStyle   = `rgba(${r},${g},${b},${(0.82 * a).toFixed(2)})`;
     ctx.fillText(char, x, y);
 
-    // Pass 4 — sharp opaque fill
+    // the actual letter
     ctx.shadowBlur = 0;
     ctx.fillStyle  = `rgba(${r},${g},${b},${a.toFixed(2)})`;
     ctx.fillText(char, x, y);
   }
 
-  // ── Layout calculation (audit #26, #27) ───────────────────────────────────
-
+  // figure out where to put the letters
   _computeLayout(text) {
     const ctx = this._mCtx;
     const W   = this._W;
     const H   = this._H;
 
-    // Responsive starting font size
+    // start with a decent size
     let fontSize = Math.min(56, Math.max(12, Math.round(W * 0.04)));
 
-    // Shrink font until text fits within 92% of viewport width (audit #26)
+    // make it smaller if it doesnt fit
     let colStride, totalWidth;
     for (let attempt = 0; attempt < 60; attempt++) {
       ctx.font   = `${fontSize}px "Share Tech Mono", "Courier New", monospace`;
-      colStride  = ctx.measureText('ｦ').width; // measured advance (audit #27)
+      colStride  = ctx.measureText('ｦ').width;
       totalWidth = text.length * colStride;
       if (totalWidth <= W * 0.92 || fontSize <= 12) break;
       fontSize--;
     }
 
-    // Still overflows at min size — split into two lines (audit #26)
+    // if still too big, split into two lines
     if (totalWidth > W * 0.92 && fontSize <= 12) {
       return this._twoLineLayout(text, fontSize, colStride, W, H);
     }
@@ -549,11 +551,11 @@ export class GlitchSequencer {
   }
 
   _twoLineLayout(text, fontSize, colStride, W, H) {
-    // Split at last space at or before midpoint
+    // try to split at a space near the middle
     const mid      = Math.floor(text.length / 2);
     let splitAt    = text.lastIndexOf(' ', mid);
     if (splitAt <= 0) splitAt = text.indexOf(' ');
-    if (splitAt <= 0) splitAt = mid; // no space — hard split
+    if (splitAt <= 0) splitAt = mid; // no space, just split in half
 
     const line1 = text.slice(0, splitAt).trimEnd();
     const line2 = text.slice(splitAt).trimStart();
@@ -579,7 +581,7 @@ export class GlitchSequencer {
       x,
       y,
       currentY:       y,
-      startY:         y,          // captured before fall begins (audit #8)
+      startY:         y,          // remember where it started for the fall
       alpha:          0,
       state:          'hidden',
       flashT:         0,
@@ -593,67 +595,64 @@ export class GlitchSequencer {
     };
   }
 
-  // ── Message orchestration ─────────────────────────────────────────────────
-
+  // show a message
   async _showMessage(text, hold) {
-    // Update SR-only live region (audit #19)
+    // update the screen reader thing
     if (this._a11y) this._a11y.textContent = text;
 
     const chars = this._computeLayout(text);
     this._chars = chars;
 
-    // Register message zone for rain glow-boost interaction.
-    // Rain is NEVER paused — it flows behind the message canvas (z-index 1001).
-    // Pausing columns created a solid black void in the center of the screen.
+    // tell the rain where the text is
     const xs      = chars.filter(c => c.finalChar !== ' ').map(c => c.x);
     const xMin    = Math.min(...xs);
     const xMax    = Math.max(...xs) + (chars[0]?.fontSize || FONT_SIZE);
     const centerY = chars[0]?.y ?? this._H / 2;
     this._rain.setMessageZone(xMin, xMax, centerY);
 
-    // Ripple-in from center outward
+    // make the letters appear from the middle out
     const lines = this._groupLines(chars);
     await this._rippleIn(lines);
 
-    // Wait for last char's glitch-in to complete + settle buffer
+    // wait for the last letter to finish
     await sleep(370 + 120);
-    // Hold
+    // hold for a bit
     await sleep(800);
 
     if (hold) {
-      // Enable micro-ripple for all settled chars (Phase 5) (audit #32)
+      // make them glitch a little forever
       for (const ch of chars) {
         if (ch.state === 'settled') {
           ch.microGlitch   = true;
           ch.microGlitchAt = performance.now() + 1500 + Math.random() * 2500;
         }
       }
-      return; // never falls — zone stays registered forever
+      return; // dont fall
     }
 
-    // Fall — edge-inward order (outermost characters fall first) (audit #30)
+    // make them fall from the edges in
     await this._triggerFall(lines);
 
-    // Wait for fall to complete, then clear zone and chars
+    // wait then clean up
     await sleep(1000);
     this._rain.clearMessageZone();
     this._chars = [];
   }
 
   _groupLines(chars) {
-    // Group chars by their y position (handles both 1-line and 2-line layout)
+    // put letters on the same line together
     const byY = new Map();
     for (const ch of chars) {
       const key = Math.round(ch.y);
       if (!byY.has(key)) byY.set(key, []);
       byY.get(key).push(ch);
     }
-    // Sort lines top-to-bottom
+    // sort top to bottom
     return [...byY.values()].sort((a, b) => a[0].y - b[0].y);
   }
 
   async _rippleIn(lines) {
-    // Fire all lines simultaneously, each with its own center
+    // start from the center of each line and go outward
     let maxRing = 0;
     for (const line of lines) {
       const n      = line.length;
@@ -673,7 +672,7 @@ export class GlitchSequencer {
         for (const i of indices) {
           const ch = line[i];
           if (ch.finalChar === ' ') {
-            ch.state = 'settled'; ch.alpha = 0; // spaces skipped (audit #20)
+            ch.state = 'settled'; ch.alpha = 0; // spaces are invisible
           } else {
             ch.state       = 'assembling';
             ch.activatedAt = performance.now();
@@ -687,8 +686,7 @@ export class GlitchSequencer {
   }
 
   async _triggerFall(lines) {
-    // Edge-inward: outermost ring falls first (audit #30 — "mirror of ripple-in"
-    // is clarified to mean edge→center, making the message contract inward)
+    // start from the outside and go in
     let maxRing = 0;
     for (const line of lines) {
       const n = line.length;
@@ -717,10 +715,9 @@ export class GlitchSequencer {
     }
   }
 
-  // ── Reduced motion fallback ───────────────────────────────────────────────
-
+  // if the user has reduced motion, just show the text
   _showStatic(customMessage) {
-    // Cancel bgdrift and snap to black
+    // stop background animation and go black
     document.body.style.animation = 'none';
     document.body.classList.add('matrix-transition');
     const app = document.querySelector('.app');
@@ -729,7 +726,7 @@ export class GlitchSequencer {
     this._rCanvas.classList.add('active');
     this._mCanvas.classList.add('active');
 
-    // Draw static text on message canvas
+    // just draw the three messages
     const ctx = this._mCtx;
     const W   = this._W;
     const H   = this._H;
@@ -743,7 +740,7 @@ export class GlitchSequencer {
     const lineH    = 40;
     const startY   = H / 2 - lineH;
     messages.forEach((m, i) => ctx.fillText(m, W / 2, startY + i * lineH));
-    ctx.textAlign = 'left'; // reset
+    ctx.textAlign = 'left'; // put it back
 
     if (this._a11y) this._a11y.textContent = messages.join('. ');
   }
