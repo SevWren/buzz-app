@@ -2,3 +2,16 @@ node_modules/
 .env
 .DS_Store
 *.log
+.antigravitycli/
+buzz-app/
+fix/
+.antigravitycli/
+buzz-app/
+fix/
+.antigravitycli\
+buzz-app\
+fix\
+
+*.mp4
+*.zip
+*.rar
